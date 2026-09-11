@@ -279,10 +279,28 @@ const CONFIG = {
     maxOwnDebtRatio: 2, // مانده‌ی وام‌های در جریان خودش بیش از این چند برابر سرمایه‌اش نباشد
     maxActiveGuarantees: 2, // حداکثر ضمانت وام‌های در جریان
   },
+  // اصلاح نام‌های اکسل صندوق: { "نام در اکسل": "نام درست" }. در مخزن عمومی خالی می‌ماند؛
+  // خودکارساز آن را از Secret با نام NAME_FIXES پر می‌کند (نام‌ها نباید در کد عمومی بیایند).
+  nameFixes: {},
   chartRanges: [6, 12, 24], // دکمه‌های بازه‌ی نمودارهای ماهانه
   chartDefault: 6,
   growthStart: "1403/01/01", // نقطه‌ی شروع نمودار رشد دارایی
 };
+
+// اصلاح نام‌ها (CONFIG.nameFixes). اگر نام درست از قبل مال عضو دیگری باشد، اصلاح انجام نمی‌شود
+// تا حساب دو نفر هم‌نام یکی نشود.
+function nameFixMap(memberNames, notes) {
+  const have = new Set(memberNames.map(norm));
+  const map = new Map(), skipped = [];
+  for (const [from, to] of Object.entries(CONFIG.nameFixes || {})) {
+    const f = norm(from), t = norm(to);
+    if (!f || !t || f === t) continue;
+    if (have.has(t)) { skipped.push(`«${from}» ← «${to}»`); continue; }
+    map.set(f, String(to).trim());
+  }
+  if (skipped.length) notes.push({ level: "warn", text: `این اصلاح نام‌ها انجام نشد، چون نام درست از قبل مال عضو دیگری است (شاید دو نفر هم‌نام‌اند): ${skipped.join("، ")}` });
+  return map;
+}
 
 // ---------------------------------------------------------------------------- خواندن اکسل صندوق
 function parseWorkbook(wb) {
@@ -291,6 +309,11 @@ function parseWorkbook(wb) {
   const loansT = readTable(wb, "loans");
   const header = readHeaderValues(members.top);
   const notes = [];
+  const fixMap = nameFixMap(members.body.map((r) => r.name).filter((n) => n != null), notes);
+  const fix = (raw) => (raw != null && fixMap.has(norm(raw)) ? fixMap.get(norm(raw)) : raw);
+  members.body.forEach((r) => { r.name = fix(r.name); });
+  txT.body.forEach((r) => { r.who = fix(r.who); });
+  loansT.body.forEach((r) => { r.who = fix(r.who); });
 
   const fundNames = CONFIG.fundAccounts.map(norm);
   const rows = members.body.filter((r) => toNum(r.row) != null && String(r.name || "").trim());
@@ -298,6 +321,11 @@ function parseWorkbook(wb) {
   const memberCount = rows.length - fundRows.length;
   const personalCapitalSum = rows.reduce((s, r) => s + (toNum(r.capital) || 0), 0);
   const names = new Set(rows.map((r) => norm(r.name)));
+  if (names.size < rows.length) {
+    const seen = new Set(), dup = new Set();
+    rows.forEach((r) => { const k = norm(r.name); if (seen.has(k)) dup.add(String(r.name).trim()); seen.add(k); });
+    notes.push({ level: "warn", text: `این نام‌ها در شیت اعضا بیش از یک بار آمده‌اند: ${[...dup].join("، ")}` });
+  }
   // اعضای واقعی (بدون حساب‌های صندوق) با موبایل و سرمایه؛ فقط برای تطبیق و فهرست ضامن، هرگز در داشبورد عمومی
   const people = rows.filter((r) => !fundNames.includes(norm(r.name))).map((r) => ({ name: norm(r.name), nameRaw: String(r.name).trim(), mobile: normMobile(r.mobile), capital: toNum(r.capital) || 0 }));
   if (CONFIG.fundAccounts.length && fundRows.length < CONFIG.fundAccounts.length) {
@@ -340,7 +368,8 @@ function parseWorkbook(wb) {
   loans.sort((a, b) => a.jdn - b.jdn);
   loans.forEach((l) => names.add(l.who));
 
-  return { header, memberCount, personalCapitalSum, names, people, hasMobile: members.found.mobile, tx, loans, notes, hasLoanNames: loansT.found.who };
+  const fixKeys = new Map([...fixMap].map(([f, t]) => [f, norm(t)])); // نام قدیمی ← نام درست (هر دو نرمال)
+  return { header, memberCount, personalCapitalSum, names, fixKeys, people, hasMobile: members.found.mobile, tx, loans, notes, hasLoanNames: loansT.found.who };
 }
 
 // ---------------------------------------------------------------------------- خواندن فایل درخواست‌ها
@@ -375,6 +404,7 @@ function parseRequests(wb) {
       list.push({
         name: norm(nameRaw), nameRaw, mobile: normMobile(r.mobile), jdn, cancelled: false, received: null,
         gName: norm(gNameRaw), gNameRaw, gMobile: normMobile(r.gMobile),
+        amount: toNum(r.amount), amountRaw: r.amount == null ? "" : String(r.amount).trim(), count: toNum(r.count),
       });
     });
     return { list, badDate, source: "porsline", hasGuarantor: gCols.length > 0 || !!t.found.gMobile };
@@ -528,14 +558,15 @@ function compute(data, req) {
   const monthLoans = loans.filter((l) => l.jdn >= monthStart && l.jdn <= asOf);
 
   // --- زمان انتظار و صف (از فایل درخواست‌ها)
-  let wait = null, guarantors = null;
+  let wait = null, guarantors = null, review = null;
   if (req && !data.hasLoanNames) {
     checks.push({ level: "error", text: `ستون «${CONFIG.sheets.loans.optional.who}» در شیت وام‌ها پیدا نشد؛ درخواست‌ها به وام‌ها وصل نمی‌شوند و بخش «انتظار برای وام» ساخته نشد.` });
   } else if (req) {
     // هر درخواست ← نام عضو در نرم‌افزار: اول از روی موبایل، اگر نشد از روی نام
     const byMobile = new Map();
     data.people.forEach((p) => { if (p.mobile && !byMobile.has(p.mobile)) byMobile.set(p.mobile, p.name); });
-    const resolve = (mobile, name) => (mobile && byMobile.get(mobile)) || (name && data.names.has(name) ? name : null);
+    const byName = (name) => (!name ? null : data.names.has(name) ? name : data.fixKeys && data.fixKeys.has(name) && data.names.has(data.fixKeys.get(name)) ? data.fixKeys.get(name) : null);
+    const resolve = (mobile, name) => (mobile && byMobile.get(mobile)) || byName(name);
 
     const loansBy = new Map();
     loans.forEach((l) => { if (!loansBy.has(l.who)) loansBy.set(l.who, []); loansBy.get(l.who).push(l); });
@@ -544,11 +575,12 @@ function compute(data, req) {
     const waits = [], unknownNames = new Set(), manualMiss = [];
     let future = 0, cancelled = 0, queue = 0, expired = 0, superseded = 0;
     const reqOfLoan = new Map(); // وام ← درخواستی که به آن رسیده (برای پیدا کردن ضامن)
+    const queueList = []; // صف: آخرین درخواستِ هر نفر که هنوز به وام نرسیده و منقضی نشده
 
     // درخواست‌ها به تفکیک شخص
     const reqBy = new Map();
     for (const r of req.list) {
-      if (r.jdn > asOf) { future++; continue; }
+      if (r.jdn > asOf) future++; // بعد از تاریخ اکسل صندوق ثبت شده؛ هنوز وامی به آن نرسیده، پس در صف حساب می‌شود
       if (r.cancelled) { cancelled++; continue; }
       const who = resolve(r.mobile, r.name);
       if (!who) { unknownNames.add(r.nameRaw || r.mobile); continue; }
@@ -579,7 +611,8 @@ function compute(data, req) {
       const pending = rs.filter((r) => r.jdn > prev);
       if (pending.length) {
         superseded += pending.length - 1;
-        if (pending[pending.length - 1].jdn >= expiry) queue++; else expired++;
+        const lastReq = pending[pending.length - 1];
+        if (lastReq.jdn >= expiry) { queue++; queueList.push({ who, r: lastReq, n: pending.length }); } else expired++;
       }
     }
     wait = {
@@ -594,13 +627,14 @@ function compute(data, req) {
     if (req.badDate) checks.push({ level: "warn", text: `${fmtInt(req.badDate)} ردیف از فایل درخواست‌ها تاریخ قابل‌خواندن نداشت و کنار گذاشته شد.` });
     if (unknownNames.size) checks.push({ level: "warn", text: `این متقاضی‌ها با هیچ عضوی جور نشدند (نه از روی موبایل، نه نام): ${[...unknownNames].join("، ")}` });
     if (manualMiss.length) checks.push({ level: "warn", text: `برای این درخواست‌ها «تاریخ دریافت» دستی پر شده ولی وامی با همان تاریخ به همان نام پیدا نشد؛ تاریخ دستی مبنا قرار گرفت: ${manualMiss.join("، ")}` });
-    if (future) checks.push({ level: "warn", text: `${fmtInt(future)} درخواست تاریخی بعد از تاریخ اکسل صندوق دارد و حساب نشد.` });
+    if (future) checks.push({ level: "ok", text: `${fmtInt(future)} درخواست بعد از تاریخ اکسل صندوق ثبت شده و در صف حساب شد.` });
+    queueList.sort((a, b) => a.r.jdn - b.r.jdn);
 
-    // --- فهرست ضامن‌های مجاز (فقط برای مدیر صندوق)
-    if (req.hasGuarantor) {
+    // --- سنجش اعضا: فهرست ضامن‌های مجاز و کارت بررسی درخواست‌ها (فقط برای مدیر صندوق، هرگز در داشبورد)
+    {
       const G = CONFIG.guarantor;
       const load = new Map(); let unknownG = 0, noReq = 0;
-      for (const l of active) {
+      if (req.hasGuarantor) for (const l of active) {
         const r = reqOfLoan.get(l);
         if (!r) { noReq++; continue; }
         const g = resolve(r.gMobile, r.gName);
@@ -645,27 +679,48 @@ function compute(data, req) {
         { key: "debt", label: `مانده‌ی وام خودش بیش از ${fmtInt(G.maxOwnDebtRatio)} برابر سرمایه`, rule: `مانده‌ی وام‌های خودش حداکثر ${fmtInt(G.maxOwnDebtRatio)} برابر سرمایه‌اش` },
         { key: "cap", label: `به سقف ${fmtInt(G.maxActiveGuarantees)} ضمانت رسیده`, rule: `کمتر از ${fmtInt(G.maxActiveGuarantees)} ضمانت وام در جریان` },
       ];
-      const eligible = [], out = Object.fromEntries(reasons.map((x) => [x.key, []]));
-      for (const p of data.people) {
-        const late = lateBy.get(p.name) || 0, n = load.get(p.name) || 0;
-        const mine = (txBy.get(p.name) || []).filter((t) => T[t.type] !== "loan" && T[t.type] !== "settle");
-        const first = (txBy.get(p.name) || [])[0];
+      const labelOf = Object.fromEntries(reasons.map((x) => [x.key, x.label]));
+      const personBy = new Map(data.people.map((p) => [p.name, p]));
+      // همه‌ی آنچه درباره‌ی یک عضو لازم است؛ why = اولین شرط ضامنی که ندارد (یا null)
+      const assess = (name) => {
+        const p = personBy.get(name);
+        if (!p) return null;
+        const all = txBy.get(name) || [];
+        const late = lateBy.get(name) || 0, n = load.get(name) || 0, delay = maxDelay(name);
+        const mine = all.filter((t) => T[t.type] !== "loan" && T[t.type] !== "settle");
+        const first = all[0], lastMine = mine[mine.length - 1];
+        const withdraw = mine.some((t) => T[t.type] === "withdraw" && t.jdn > ago(G.noWithdrawMonths));
+        const debt = activeBy.get(name) || 0;
         const why =
           late > G.maxLateInstallments ? "late"
-          : maxDelay(p.name) > G.lateDaysLimit ? "history"
-          : !mine.some((t) => t.jdn > ago(G.inactiveMonths)) ? "inactive"
+          : delay > G.lateDaysLimit ? "history"
+          : !lastMine || lastMine.jdn <= ago(G.inactiveMonths) ? "inactive"
           : !first || first.jdn > ago(G.minTenureMonths) ? "tenure"
-          : mine.some((t) => T[t.type] === "withdraw" && t.jdn > ago(G.noWithdrawMonths)) ? "withdraw"
+          : withdraw ? "withdraw"
           : p.capital < G.minCapital ? "capital"
-          : (activeBy.get(p.name) || 0) > G.maxOwnDebtRatio * Math.max(p.capital, 0) ? "debt"
+          : debt > G.maxOwnDebtRatio * Math.max(p.capital, 0) ? "debt"
           : n >= G.maxActiveGuarantees ? "cap"
           : null;
-        if (why) out[why].push(p.nameRaw);
-        else eligible.push({ name: p.nameRaw, free: G.maxActiveGuarantees - n });
+        const myLoans = loansBy.get(name) || [];
+        return {
+          name: p.nameRaw, capital: p.capital, late, maxDelay: delay, guarantees: n, withdraw,
+          tenureDays: first ? asOf - first.jdn : 0, lastTxDays: lastMine ? asOf - lastMine.jdn : null,
+          loansN: myLoans.length, activeDebt: debt, activeLoansN: active.filter((l) => l.who === name).length,
+          why, whyLabel: why ? labelOf[why] : null,
+        };
+      };
+      if (req.hasGuarantor) {
+        const eligible = [], out = Object.fromEntries(reasons.map((x) => [x.key, []]));
+        for (const p of data.people) {
+          const a = assess(p.name);
+          if (a.why) out[a.why].push(p.nameRaw);
+          else eligible.push({ name: p.nameRaw, free: G.maxActiveGuarantees - a.guarantees });
+        }
+        const fa = (a, b) => a.localeCompare(b, "fa");
+        eligible.sort((a, b) => fa(a.name, b.name));
+        guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key] })), noReq, unknownG, activeN: active.length };
       }
-      const fa = (a, b) => a.localeCompare(b, "fa");
-      eligible.sort((a, b) => fa(a.name, b.name));
-      guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key] })), noReq, unknownG, activeN: active.length };
+      review = { assess, resolve, queue: queueList, list: req.list, waitMedian: wait.median, hasGuarantor: req.hasGuarantor };
     }
   } else {
     checks.push({ level: "warn", text: "فایل درخواست‌ها داده نشده؛ بخش «انتظار برای وام» در داشبورد نمی‌آید." });
@@ -722,6 +777,7 @@ function compute(data, req) {
     },
     wait,
     guarantors, // فقط برای مدیر صندوق؛ در renderReport استفاده نمی‌شود
+    review, // سنجش اعضا و صف برای کارت بررسی درخواست‌ها؛ فقط برای مدیر صندوق
     growth: { series, snaps, years, start: fmtMonthYear(g0) },
     months: months.slice(-Math.max(...CONFIG.chartRanges)),
     checks,

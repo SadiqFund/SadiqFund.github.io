@@ -43,6 +43,14 @@ const fingerprint = (lines) => crypto.createHash("sha256").update([...lines].sor
 
 const log = (msg) => console.log(`[dashboard] ${msg}`); // فقط پیام کلی، هرگز داده
 
+// اصلاح نام‌های اکسل صندوق از Secret با نام NAME_FIXES؛ هر خط: «نام در اکسل : نام درست»
+for (const line of (process.env.NAME_FIXES || "").split(/\r?\n/)) {
+  const i = line.indexOf(":");
+  if (i === -1) continue;
+  const from = line.slice(0, i).trim(), to = line.slice(i + 1).trim();
+  if (from && to) D.CONFIG.nameFixes[from] = to;
+}
+
 async function tg(method, params) {
   const res = await fetch(`${API}/bot${TOKEN}/${method}`, {
     method: "POST",
@@ -281,6 +289,67 @@ function plWhy(e) {
   return e.first ? `${plWhyOne(e.first)} / ${plWhyOne(e)}` : plWhyOne(e);
 }
 
+// ---------- کارت بررسی هر درخواست تازه (فقط به کانال خصوصی مدیر)
+const dec = (x, d = 1) => x.toLocaleString("fa-IR", { maximumFractionDigits: d });
+const monthsOf = (days) => dec(days / 30.44);
+function reviewCard(r, x) {
+  const R = r.review;
+  const who = R.resolve(x.mobile, x.name);
+  const a = who ? R.assess(who) : null;
+  const lines = [`📝 درخواست وام تازه، ثبت ${D.fmtDate(x.jdn)}`];
+  lines.push(`متقاضی: ${a ? a.name : `${x.nameRaw || "(بی‌نام)"} ⚠️ با هیچ عضوی جور نشد (نه موبایل، نه نام)`}`);
+  const amt = x.amount > 0 ? D.fmtMoney(x.amount, true) : x.amountRaw || "";
+  if (amt || x.count) lines.push(`درخواست: ${amt || "مبلغ نامعلوم"}${x.count ? ` در ${D.fmtInt(x.count)} قسط` : ""}` +
+    (a && x.amount > 0 && a.capital > 0 ? ` (${dec(x.amount / a.capital)} برابر سرمایه‌اش)` : ""));
+  if (a) {
+    lines.push("", `وضع متقاضی (اکسل ${D.fmtDate(r.asOf)}):`);
+    lines.push(`• سرمایه: ${D.fmtMoney(a.capital, true)}`);
+    lines.push(`• عضویت: ${monthsOf(a.tenureDays)} ماه`);
+    lines.push(`• قسط معوق: ${a.late ? `⚠️ ${D.fmtInt(a.late)} قسط` : "ندارد"}`);
+    lines.push(`• بیشترین تأخیر قسط در ${D.fmtInt(D.CONFIG.guarantor.lateLookbackMonths)} ماه اخیر: ${a.loansN ? `${a.maxDelay > D.CONFIG.guarantor.lateDaysLimit ? "⚠️ " : ""}${D.fmtInt(a.maxDelay)} روز` : "وامی نگرفته"}`);
+    lines.push(`• وام در جریان: ${a.activeLoansN ? `${D.fmtInt(a.activeLoansN)} وام، مانده ${D.fmtMoney(a.activeDebt, true)}` : "ندارد"}${a.loansN ? ` (تا حالا ${D.fmtInt(a.loansN)} وام)` : ""}`);
+    lines.push(`• آخرین تراکنش: ${a.lastTxDays == null ? "⚠️ ندارد" : a.lastTxDays <= 0 ? "همان روز اکسل" : `${D.fmtInt(a.lastTxDays)} روز پیش از اکسل`}`);
+    if (a.withdraw) lines.push(`• ⚠️ در ${D.fmtInt(D.CONFIG.guarantor.noWithdrawMonths)} ماه اخیر از سرمایه‌اش برداشت کرده`);
+  }
+  // ضامن
+  if (R.hasGuarantor) {
+    const g = R.resolve(x.gMobile, x.gName);
+    const ga = g ? R.assess(g) : null;
+    lines.push("", "ضامن: " + (!x.gName && !x.gMobile ? "⚠️ وارد نشده"
+      : !ga ? `${x.gNameRaw || "(بی‌نام)"} ⚠️ با هیچ عضوی جور نشد`
+      : g === who ? `${ga.name} ⛔ خود متقاضی است`
+      : `${ga.name} ${ga.why ? `⛔ ${ga.whyLabel}` : "✅ مجاز"}${ga.guarantees ? ` (الان ضامن ${D.fmtInt(ga.guarantees)} وام در جریان)` : ""}`));
+  }
+  // صف
+  const i = R.queue.findIndex((q) => q.r === x);
+  if (i !== -1) {
+    lines.push("", `صف: نفر ${D.fmtInt(i + 1)} از ${D.fmtInt(R.queue.length)}` +
+      (R.waitMedian != null ? `؛ زمان انتظار معمول حدود ${monthsOf(R.waitMedian)} ماه` : ""));
+    if (R.queue[i].n > 1) lines.push(`ℹ️ این نفر ${D.fmtInt(R.queue[i].n)} درخواست در صف داشت؛ فقط همین آخری حساب می‌شود.`);
+  } else if (who) lines.push("", "صف: این درخواست در صف حساب نشد (درخواست تازه‌تری از همین نفر هست، یا منقضی شده).");
+  return lines.join("\n");
+}
+
+async function sendReviews(r) {
+  const R = r.review;
+  if (!R || !NOTIFY_ID) return;
+  const keyOf = (x) => fingerprint([[x.mobile || x.name, x.jdn, x.gMobile || x.gName].join("|")]).slice(0, 10);
+  const keys = [...new Set(R.list.map(keyOf))].sort();
+  if (!Array.isArray(state.seenReq)) { // بار اول: درخواست‌های موجود دیده‌شده حساب می‌شوند، کارتی فرستاده نمی‌شود
+    state.seenReq = keys;
+    await notify(`ℹ️ کارت بررسی درخواست‌ها روشن شد. ${D.fmtInt(R.list.length)} درخواست قبلی دیده‌شده حساب شد؛ از این به بعد برای هر درخواست تازه کارت می‌آید.`);
+    return;
+  }
+  const seen = new Set(state.seenReq);
+  const fresh = R.list.filter((x) => !seen.has(keyOf(x))).sort((a, b) => a.jdn - b.jdn);
+  state.seenReq = keys; // فقط اثر انگشت‌های کوتاه؛ نام یا شماره ذخیره نمی‌شود
+  if (!fresh.length) return;
+  const MAX = 10;
+  for (const x of fresh.slice(-MAX)) await notify(reviewCard(r, x));
+  if (fresh.length > MAX) await notify(`ℹ️ ${D.fmtInt(fresh.length - MAX)} درخواست تازه‌ی قدیمی‌تر هم بود که کارتش فرستاده نشد.`);
+  log(`review: ${fresh.length} new request card(s).`);
+}
+
 async function notify(text) {
   if (!NOTIFY_ID) return;
   const t = text.length > 3900 ? text.slice(0, 3900) + "\n…" : text;
@@ -504,6 +573,8 @@ async function main() {
       (SITE_URL ? `\n\nچند دقیقه‌ی دیگر روی لینک دیده می‌شود:\n${SITE_URL}` : "")
     );
   }
+  await sendReviews(r);
+  writeState(state);
   if (sendG) await sendGuarantors(r);
   if (r.guarantors) await updatePorsline(r, !loud);
 }
