@@ -1,9 +1,9 @@
 {
-  "offset": 621408185,
+  "offset": 621408186,
   "fund": {
-    "file_id": "BQACAgQAAx0CfR8yXwADXGqjWiAywGT3FjUcywH1dvypXqN2AAL3IQACB_AZUcADFlJeO-f9PQQ",
-    "file_unique_id": "AgAD9yEAAgfwGVE",
-    "date": 1789090336
+    "file_id": "BQACAgQAAx0CfR8yXwADpGqjnvsi-fQ7EAz2VQAB5jZiQ9kBagACISIAAgfwGVFN2TT_xEXSoj0E",
+    "file_unique_id": "AgADISIAAgfwGVE",
+    "date": 1789107963
   },
   "lastBuild": {
     "reportDate": "۲۰ شهریور ۱۴۰۵",
@@ -18,7 +18,7 @@
   "plVia": "export",
   "plHash": "f3a3db0ce933d6fe",
   "plCount": 90,
-  "plCheckedAt": "2026-09-11T06:22:45.442Z",
+  "plCheckedAt": "2026-09-11T06:26:57.031Z",
   "seenReq": [
     "0052ed353c",
     "0162b9450e",
