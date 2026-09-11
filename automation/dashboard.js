@@ -1055,6 +1055,32 @@ footer{padding:20px 4px 0;font-size:12px;color:var(--muted);text-align:center}
 @media (max-width:599px){ul.key{grid-template-columns:1fr}.stat{padding:14px}.stat .v{font-size:24px}.chead .ranges{margin-bottom:4px}}
 @media (max-width:380px){.stat .v{font-size:21px}.hero .big{font-size:30px}ul.key{grid-template-columns:1fr}}
 @media print{.ranges,.hint{display:none}}
+/* حباب شناور روی نمودار رشد */
+.gtip{position:absolute;z-index:4;background:#fff;color:var(--accent);font-size:12px;line-height:1.55;padding:5px 10px;border-radius:8px;white-space:nowrap;pointer-events:none;box-shadow:0 4px 14px rgba(3,4,94,.28);transform:translate(-50%,calc(-100% - 14px));text-align:center;direction:rtl}
+.gtip b{display:block;font-size:13px;font-weight:800;color:var(--primary-dark)}
+.gtip::after{content:"";position:absolute;left:50%;bottom:-5px;width:10px;height:10px;background:#fff;transform:translateX(-50%) rotate(45deg);border-radius:2px}
+.gtip.below{transform:translate(-50%,14px)}.gtip.below::after{bottom:auto;top:-5px}
+/* کم‌رنگ شدن بقیه‌ی ستون‌ها وقتی روی یکی هستید */
+.cols i{transition:filter .12s,opacity .15s}
+.plot.dim .cols button:not(.hov) i{opacity:.32}
+/* انیمیشن ورود (فقط بار اول هر بخش؛ اگر گوشی «کاهش حرکت» را خواسته باشد، خاموش است) */
+@keyframes rise{from{transform:scaleY(0)}}
+@keyframes draw{from{stroke-dashoffset:1}}
+@keyframes fade{from{opacity:0}}
+@keyframes pop{from{opacity:0;transform:scale(.3)}}
+@keyframes ringin{from{stroke-dasharray:0 1000}}
+.anim [data-anim]:not(.in) .cols button{transform:scaleY(0)}
+.anim [data-anim]:not(.in) .gline{stroke-dashoffset:1}
+.anim [data-anim]:not(.in) .garea,.anim [data-anim]:not(.in) .gdot{opacity:0}
+.anim [data-anim]:not(.in) .dot,.anim [data-anim]:not(.in) .rp{opacity:0}
+.cols button{transform-origin:50% 100%}
+.anim .in:not(.done) .cols button{animation:rise .7s cubic-bezier(.2,.75,.25,1) both;animation-delay:calc(var(--i,0)*45ms)}
+.gline{stroke-dasharray:1}
+.anim .in:not(.done) .gline{animation:draw .9s cubic-bezier(.4,.1,.2,1) both}
+.anim .in:not(.done) .garea{animation:fade .8s .2s both}
+.anim .in:not(.done) .gdot{animation:fade .3s .75s both}
+.anim .in:not(.done) .dots .dot{animation:pop .35s cubic-bezier(.2,.8,.3,1.2) both;animation-delay:calc(var(--i,0)*9ms)}
+.anim .in:not(.done) .rp{animation:ringin .9s cubic-bezier(.3,.1,.2,1) both}
 `;
 
 // آیکن‌های ساده (خطی)
@@ -1113,34 +1139,45 @@ function dashRuntime() {
     G.years.forEach((y) => {
       g += `<line x1="${X(y.d)}" x2="${X(y.d)}" y1="${mt + ph}" y2="${mt + ph + 5}" stroke="#fff" stroke-opacity=".5"/><text x="${X(y.d)}" y="${H - 5}" text-anchor="middle">${y.label}</text>`;
     });
-    g += `<path d="M${X(0)},${Y(0)}L${pts.join("L")}L${X(dmax)},${Y(0)}Z" fill="url(#gFill)"/>`;
-    g += `<path d="M${pts.join("L")}" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    g += `<path class="garea" d="M${X(0)},${Y(0)}L${pts.join("L")}L${X(dmax)},${Y(0)}Z" fill="url(#gFill)"/>`;
+    g += `<path class="gline" pathLength="1" d="M${pts.join("L")}" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     g += `<line id="gGuide" y1="${mt}" y2="${mt + ph}" stroke="#fff" stroke-opacity=".7" stroke-width="1" stroke-dasharray="3 3"/>`;
     const rr = pw / Math.max(1, G.snaps.length - 1) < 14 ? 2.5 : 3.5; // در صفحه‌ی باریک، نقطه‌ها کوچک‌تر
-    G.snaps.forEach((s, i) => { g += `<circle data-i="${i}" cx="${X(s.d)}" cy="${Y(s.v)}" r="${rr}" fill="#fff" stroke="#0049E8" stroke-width="1.5"/>`; });
+    G.snaps.forEach((s, i) => { g += `<circle class="gdot" data-i="${i}" cx="${X(s.d)}" cy="${Y(s.v)}" r="${rr}" fill="#fff" stroke="#0049E8" stroke-width="1.5"/>`; });
     g += `<rect x="${ml}" y="0" width="${pw}" height="${H}" fill="transparent"/>`;
-    box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" tabindex="0" role="img" aria-label="نمودار رشد دارایی کل صندوق از ${G.start}. با کلیدهای چپ و راست بین تاریخ‌ها جابه‌جا شوید.">${g}</svg>`;
-    const svg = box.firstChild;
-    const set = (i) => {
+    box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" tabindex="0" role="img" aria-label="نمودار رشد دارایی کل صندوق از ${G.start}. با کلیدهای چپ و راست بین تاریخ‌ها جابه‌جا شوید.">${g}</svg><div class="gtip" hidden></div>`;
+    const svg = box.firstChild, tip = box.lastChild;
+    // حباب کنار نقطه‌ی انتخاب‌شده؛ فقط وقتی انگشت یا نشانگر روی نمودار است
+    const bubble = (s) => {
+      tip.innerHTML = `${s.label}<b>${money(s.v, true)}</b>`;
+      tip.hidden = false;
+      const half = tip.offsetWidth / 2, x = Math.min(Math.max(X(s.d), half), W - half), y = Y(s.v);
+      tip.classList.toggle("below", y - tip.offsetHeight - 16 < 0);
+      tip.style.left = x + "px"; tip.style.top = y + "px";
+    };
+    const set = (i, show) => {
       growth.sel = i;
       const s = G.snaps[i];
       svg.querySelectorAll("circle").forEach((c) => c.setAttribute("r", +c.dataset.i === i ? 6.5 : rr));
       const gl = svg.querySelector("#gGuide");
       gl.setAttribute("x1", X(s.d)); gl.setAttribute("x2", X(s.d));
       $("growthRead").innerHTML = `${s.label}: <b>${money(s.v, true)}</b>`;
+      if (show) bubble(s);
     };
     const pick = (e) => {
       const r = svg.getBoundingClientRect();
       const x = e.clientX - r.left;
       let best = 0, bd = Infinity;
       G.snaps.forEach((s, i) => { const dd = Math.abs(X(s.d) - x); if (dd < bd) { bd = dd; best = i; } });
-      set(best);
+      set(best, true);
     };
     svg.addEventListener("pointermove", pick);
     svg.addEventListener("pointerdown", pick);
+    svg.addEventListener("pointerleave", () => { tip.hidden = true; });
+    svg.addEventListener("blur", () => { tip.hidden = true; });
     svg.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowLeft") { set(Math.max(0, growth.sel - 1)); e.preventDefault(); }
-      if (e.key === "ArrowRight") { set(Math.min(G.snaps.length - 1, growth.sel + 1)); e.preventDefault(); }
+      if (e.key === "ArrowLeft") { set(Math.max(0, growth.sel - 1), true); e.preventDefault(); }
+      if (e.key === "ArrowRight") { set(Math.min(G.snaps.length - 1, growth.sel + 1), true); e.preventDefault(); }
     });
     set(growth.sel == null ? G.snaps.length - 1 : growth.sel);
   }
@@ -1177,7 +1214,7 @@ function dashRuntime() {
     const cols = ms.map((m, i) => {
       const segs = series.filter((s) => m[s.k] > 0);
       const h = segs.map((s, j) => `<i data-k="${s.k}" class="${j === segs.length - 1 ? "top" : ""}" style="height:calc(${pct(m[s.k]).toFixed(2)}% - ${j ? 2 : 0}px);background:${s.color}"></i>`).join("");
-      return `<button type="button" data-i="${i}" class="${i === st.sel ? "sel" : ""}" aria-label="${monthName(m)}: ${money(totals[i], true)}">${h}</button>`;
+      return `<button type="button" data-i="${i}" style="--i:${i}" class="${i === st.sel ? "sel" : ""}" aria-label=""${monthName(m)}: ${money(totals[i], true)}">${h}</button>`;
     }).join("");
     const xl = ms.map((m, i) => `<span class="${i === st.sel ? "sel" : ""}">${(ms.length - 1 - i) % every === 0 ? MONTHS[m.m - 1] : ""}</span>`).join("");
     root.querySelector(".legend").innerHTML = `<span><i class="dash"></i>میانگین ماهانه: <b>${money(avg, true)}</b></span>`;
@@ -1200,13 +1237,16 @@ function dashRuntime() {
       root.querySelectorAll(".xl span").forEach((s, j) => s.classList.toggle("sel", j === i));
       read(i);
     };
-    root.querySelectorAll(".cols button").forEach((b) => {
-      b.addEventListener("click", () => set(+b.dataset.i));
-      b.addEventListener("mouseenter", () => set(+b.dataset.i));
-      b.addEventListener("focus", () => set(+b.dataset.i));
-    });
     // راهنمای شناور: با بردن نشانگر یا زدن روی هر رنگ، مبلغ همان بخش نشان داده می‌شود
     const plot = root.querySelector(".plot"), tip = root.querySelector(".tip");
+    // ستونی که روی آن هستید پررنگ می‌ماند و بقیه کم‌رنگ می‌شوند
+    const hover = (b) => { plot.classList.add("dim"); root.querySelectorAll(".cols button").forEach((x) => x.classList.toggle("hov", x === b)); };
+    root.querySelectorAll(".cols button").forEach((b) => {
+      b.addEventListener("click", () => set(+b.dataset.i));
+      b.addEventListener("pointerenter", () => { set(+b.dataset.i); hover(b); });
+      b.addEventListener("pointerdown", () => hover(b));
+      b.addEventListener("focus", () => set(+b.dataset.i));
+    });
     const showTip = (seg) => {
       const i = +seg.parentNode.dataset.i, m = ms[i], s = series.find((x) => x.k === seg.dataset.k);
       root.querySelectorAll(".cols i.hot").forEach((x) => x.classList.remove("hot"));
@@ -1221,7 +1261,7 @@ function dashRuntime() {
       tip.style.left = x + "px";
       tip.style.top = r.top - pr.top + "px";
     };
-    const hideTip = () => { tip.hidden = true; root.querySelectorAll(".cols i.hot").forEach((x) => x.classList.remove("hot")); };
+    const hideTip = () => { tip.hidden = true; plot.classList.remove("dim"); root.querySelectorAll(".cols i.hot").forEach((x) => x.classList.remove("hot")); };
     root.querySelectorAll(".cols i").forEach((seg) => {
       seg.addEventListener("pointerenter", () => showTip(seg));
       seg.addEventListener("click", () => showTip(seg));
@@ -1236,11 +1276,35 @@ function dashRuntime() {
     state[kind].sel = null;
     bars(kind);
   }));
+  // انیمیشن ورود: هر بخش وقتی دیده شد یک بار؛ عددها از صفر می‌شمارند
+  const anim = document.documentElement.classList.contains("anim");
+  const nums = [...document.querySelectorAll(".num[data-to]")];
+  if (anim) nums.forEach((el) => { el.dataset.txt = el.textContent; el.textContent = (0).toLocaleString("fa-IR", { minimumFractionDigits: +el.dataset.dec, maximumFractionDigits: +el.dataset.dec }); });
+  const count = (el) => {
+    const to = +el.dataset.to, dec = +el.dataset.dec, t0 = performance.now(), dur = 850;
+    const tick = (t) => {
+      const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = k < 1 ? (to * e).toLocaleString("fa-IR", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : el.dataset.txt;
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+  const reveal = (sec) => {
+    if (sec.classList.contains("in")) return;
+    sec.classList.add("in");
+    if (anim) sec.querySelectorAll(".num[data-to]").forEach(count);
+    setTimeout(() => sec.classList.add("done"), 1500); // بعد از این، تغییر بازه یا اندازه‌ی صفحه دیگر انیمیشن ندارد
+  };
+  const secs = document.querySelectorAll("[data-anim]");
+  if (anim && "IntersectionObserver" in window) {
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { reveal(e.target); io.unobserve(e.target); } }), { threshold: 0.25 });
+    secs.forEach((s) => io.observe(s));
+  } else secs.forEach(reveal);
   const all = () => { growth(); bars("loans"); bars("coll"); };
   let rt;
   window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(growth, 120); });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(all);
-  all();
+  // یک بار رسم، بعد از آماده شدن فونت (تا اندازه‌ها درست باشد و انیمیشن دو بار شروع نشود)
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(all, all); else all();
 }
 
 // @font-face برای فونت دانا (جاسازی‌شده در فایل)
@@ -1254,16 +1318,25 @@ function ringSVG(pct, label, sub, size, stroke = 10) {
   const c = size / 2, rad = c - stroke / 2 - 2, len = 2 * Math.PI * rad, p = Math.max(0, Math.min(1, pct));
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(label)} ${esc(sub)}">` +
     `<circle cx="${c}" cy="${c}" r="${rad}" fill="none" stroke="#DCE8FE" stroke-width="${stroke}"/>` +
-    (p > 0 ? `<circle cx="${c}" cy="${c}" r="${rad}" fill="none" stroke="${THEME.primary}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${(len * p).toFixed(2)} ${len.toFixed(2)}" transform="rotate(-90 ${c} ${c})"/>` : "") +
+    (p > 0 ? `<circle class="rp" cx="${c}" cy="${c}" r="${rad}" fill="none" stroke="${THEME.primary}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${(len * p).toFixed(2)} ${len.toFixed(2)}" transform="rotate(-90 ${c} ${c})"/>` : "") +
     `<text x="50%" y="${sub ? "47%" : "54%"}" text-anchor="middle" dominant-baseline="middle" font-weight="800" font-size="${Math.round(size / 5)}" fill="${THEME.text}">${label}</text>` +
     (sub ? `<text x="50%" y="68%" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="${THEME.muted}">${sub}</text>` : "") +
     `</svg>`;
 }
 
+// عدد فارسی داخل span تا در انیمیشن ورود از صفر شمرده شود (متن اصلی دست‌نخورده می‌ماند)
+function numSpan(text) {
+  const t = String(text), m = t.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/٬/g, "");
+  if (!/^\d+(٫\d+)?$/.test(m)) return esc(t);
+  const dec = m.includes("٫") ? m.split("٫")[1].length : 0;
+  return `<span class="num" data-to="${m.replace("٫", ".")}" data-dec="${dec}">${esc(t)}</span>`;
+}
+
 function renderReport(r, fonts) {
   const title = `داشبورد ${r.fundName}`;
   const upd = fmtDate(r.asOf);
-  const moneyParts = (n) => { const s = fmtMoney(n); const i = s.lastIndexOf(" "); return i > 0 ? `${s.slice(0, i)} <small>${s.slice(i + 1)} تومان</small>` : `${s} <small>تومان</small>`; };
+  const moneyParts = (n) => { const s = fmtMoney(n); const i = s.lastIndexOf(" "); return i > 0 ? `${numSpan(s.slice(0, i))} <small>${s.slice(i + 1)} تومان</small>` : `${numSpan(s)} <small>تومان</small>`; };
+  const intN = (n) => numSpan(fmtInt(n));
   const s = r.status;
   const a = r.active;
   const paidPct = a.total ? (a.paid / a.total) * 100 : 0;
@@ -1279,17 +1352,17 @@ function renderReport(r, fonts) {
   // کارت‌های آماری با پهنای متفاوت: اعضا (باریک)، وام از ابتدا (متوسط)، انتظار برای وام (پهن، دو عدد)
   const head = (icon, cls, label) => `<div class="shead"><div class="ico ${cls}">${ICONS[icon]}</div><div class="k">${label}</div></div>`;
   const stats = [
-    `<div class="card stat s-mem">${head("users", "i-blue", "اعضای فعال")}<div class="v">${fmtInt(r.memberCount)} <small>عضو</small></div></div>`,
-    `<div class="card stat s-loan">${head("coins", "i-teal", "ارزش وام‌ها از ابتدای فعالیت صندوق")}<div class="v">${moneyParts(r.loansTotalAmount)}</div></div>`,
+    `<div class="card stat s-mem" data-anim>${head("users", "i-blue", "اعضای فعال")}<div class="v">${intN(r.memberCount)} <small>عضو</small></div></div>`,
+    `<div class="card stat s-loan" data-anim>${head("coins", "i-teal", "ارزش وام‌ها از ابتدای فعالیت صندوق")}<div class="v">${moneyParts(r.loansTotalAmount)}</div></div>`,
   ];
   if (r.wait) {
     const w = r.wait;
-    stats.push(`<div class="card stat s-wait">${head("clock", "i-violet", "زمان انتظار برای وام")}
+    stats.push(`<div class="card stat s-wait" data-anim>${head("clock", "i-violet", "زمان انتظار برای وام")}
       <div class="duo">
-        <div><div class="v">${w.median != null ? `${fmtInt(w.median)} <small>روز</small>` : "—"}</div><div class="kk">زمان انتظار</div>
+        <div><div class="v">${w.median != null ? `${intN(w.median)} <small>روز</small>` : "—"}</div><div class="kk">زمان انتظار</div>
           <div class="c">${w.n ? `نیمی از ${fmtInt(w.n)} وام ${fmtInt(CONFIG.waitMonths)} ماه اخیر در همین مدت یا کمتر پرداخت شده‌اند` : `وامی با درخواست ثبت‌شده در ${fmtInt(CONFIG.waitMonths)} ماه اخیر نبود`}</div></div>
         <div class="sep"></div>
-        <div><div class="v">${fmtInt(w.queue)} <small>درخواست</small></div><div class="kk">در صف</div><div class="c">هنوز وامشان پرداخت نشده</div></div>
+        <div><div class="v">${intN(w.queue)} <small>درخواست</small></div><div class="kk">در صف</div><div class="c">هنوز وامشان پرداخت نشده</div></div>
       </div></div>`);
   }
 
@@ -1299,7 +1372,8 @@ function renderReport(r, fonts) {
   const cm = r.months[r.months.length - 1] || {};
   const curColl = (cm.repay || 0) + (cm.fee || 0) + (cm.deposit || 0) + (cm.other || 0);
 
-  const ogDesc = `دارایی کل ${fmtMoney(r.capital, true)}، ${fmtInt(a.n)} وام در جریان. تاریخ گزارش: ${upd}.`;
+  // پیش‌نمایش لینک (تلگرام و …): عنوان + یک خط خلاصه
+  const ogDesc = `دارایی کل: ${fmtMoney(r.capital, true)}، به‌روز تا ${upd}`;
 
   return `<!doctype html>
 <html lang="fa" dir="rtl">
@@ -1309,8 +1383,14 @@ function renderReport(r, fonts) {
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="${THEME.primary}">
 <title>${esc(title)}</title>
+<meta name="description" content="${esc(ogDesc)}">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="fa_IR">
+<meta property="og:site_name" content="${esc(r.fundName)}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(ogDesc)}">
+<meta name="twitter:card" content="summary">
+<script>if(!(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches))document.documentElement.classList.add("anim")<\/script>
 <style>
 /* Dana FaNum © fontiran.com — استفاده با مجوز وب مدیر صندوق */
 ${fontFaces(fonts)}
@@ -1328,7 +1408,7 @@ ${REPORT_CSS}
 </header>
 
 <main class="grid-main">
-  <section class="card hero span12">
+  <section class="card hero span12" data-anim>
     <div class="label">دارایی کل صندوق</div>
     <div class="big">${moneyParts(r.capital)}</div>
     <div class="readout" id="growthRead" aria-live="polite"></div>
@@ -1338,10 +1418,10 @@ ${REPORT_CSS}
 
   <div class="stats span12${r.wait ? " has-wait" : ""}">${stats.join("")}</div>
 
-  <section class="card span12 lip">
+  <section class="card span12 lip" data-anim>
     <div class="lip-a">
       <h2>وام‌های در جریان</h2>
-      <div class="big2">${fmtInt(a.n)} <small>وام</small></div>
+      <div class="big2">${intN(a.n)} <small>وام</small></div>
       <div class="ring">
         ${ringSVG(paidPct / 100, `${fmtInt(Math.round(paidPct))}٪`, "بازپرداخت‌شده", 132)}
         <div class="rt">
@@ -1354,7 +1434,7 @@ ${REPORT_CSS}
     <div class="lip-b">
       <h3>وضعیت بازپرداخت</h3>
       <div class="sub">هر دایره یک وام در جریان است</div>
-      <div class="dots" aria-hidden="true">${r.dots.map((d) => `<span class="dot s-${d}"></span>`).join("")}</div>
+      <div class="dots" aria-hidden="true">${r.dots.map((d, i) => `<span class="dot s-${d}" style="--i:${i}"></span>`).join("")}</div>
       <ul class="key">
         <li><span class="dot s-ok"></span><b>${fmtInt(s.ok)}</b> وام طبق برنامه</li>
         <li><span class="dot s-ahead"></span><b>${fmtInt(s.ahead)}</b> وام جلوتر از برنامه</li>
@@ -1365,7 +1445,7 @@ ${REPORT_CSS}
     </div>
   </section>
 
-  <section class="card span12 chartcard" data-kind="loans" id="ch-loans">
+  <section class="card span12 chartcard" data-kind="loans" id="ch-loans" data-anim>
     <div class="cc-main">
       <div class="chead"><div><h2>وام پرداخت‌شده</h2><div class="sub">مبلغ وام‌هایی که صندوق در هر ماه به اعضا داده است</div></div>${ranges()}</div>
       <div class="legend"></div>
@@ -1375,14 +1455,14 @@ ${REPORT_CSS}
     </div>
     <aside class="side">
       <div class="side-h">این ماه <span>${esc(monthRange)}</span></div>
-      <div class="v">${fmtInt(mo.loanN)} <small>وام</small></div>
+      <div class="v">${intN(mo.loanN)} <small>وام</small></div>
       <div class="k">${mo.loanN ? `به ارزش <b>${fmtMoney(mo.loanAmt, true)}</b>` : "هنوز وامی پرداخت نشده"}</div>
       ${mo.list.length ? `<div class="chips" aria-label="وام‌های این ماه">${mo.list.slice(0, 4).map((l) => `<span><b>${fmtMoney(l.amount)}</b>${fmtInt(l.count)} قسط</span>`).join("")}${mo.list.length > 4 ? `<span class="more">و ${fmtInt(mo.list.length - 4)} وام دیگر</span>` : ""}</div>` : ""}
       ${mo.avg12 ? `<div class="cmp">میانگین ماهانه‌ی ${fmtInt(CONFIG.waitMonths)} ماه اخیر: <b>${fmtMoney(mo.avg12, true)}</b></div>` : ""}
     </aside>
   </section>
 
-  <section class="card span12 chartcard" data-kind="coll" id="ch-coll">
+  <section class="card span12 chartcard" data-kind="coll" id="ch-coll" data-anim>
     <div class="cc-main">
       <div class="chead"><div><h2>مجموع وصولی</h2><div class="sub">هر چه در هر ماه وارد صندوق شده، به تفکیک نوع واریز</div></div>${ranges()}</div>
       <div class="legend"></div>
@@ -1395,7 +1475,7 @@ ${REPORT_CSS}
       <div class="k">وصول اقساط</div>
       ${mo.due
         ? `<div class="side-ring">${ringSVG(collectPct / 100, `${fmtInt(Math.round(collectPct))}٪`, "وصول", 120, 11)}</div>
-      <div class="v">${fmtInt(mo.paid)} <small>قسط از ${fmtInt(mo.due)} قسط</small></div>
+      <div class="v">${intN(mo.paid)} <small>قسط از ${fmtInt(mo.due)} قسط</small></div>
       <div class="k">قسطی که تا امروز سررسید شده، پرداخت شده</div>`
         : `<div class="v">—</div><div class="k">هنوز قسطی در این ماه سررسید نشده</div>`}
       <div class="cmp">وصولی این ماه تا امروز: <b>${fmtMoney(curColl, true)}</b></div>
