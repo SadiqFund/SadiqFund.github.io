@@ -695,12 +695,17 @@ function compute(data, req) {
     // --- سنجش اعضا: فهرست ضامن‌های مجاز و کارت بررسی درخواست‌ها (فقط برای مدیر صندوق، هرگز در داشبورد)
     {
       const G = CONFIG.guarantor;
-      const load = new Map(), unknownGNames = []; let unknownG = 0, noReq = 0;
+      const load = new Map(), unknownGList = []; let unknownG = 0, noReq = 0;
       if (req.hasGuarantor) for (const l of active) {
         const r = reqOfLoan.get(l);
         if (!r) { noReq++; continue; }
         const g = resolve(r.gMobile, r.gName);
-        if (!g) { unknownG++; unknownGNames.push(r.gNameRaw || r.gMobile || "(خالی)"); continue; }
+        if (!g) {
+          unknownG++;
+          const rf = data.rosterFind ? data.rosterFind(r.gMobile, r.gName) : null;
+          unknownGList.push({ borrower: l.whoRaw, typed: r.gNameRaw || (r.gMobile ? "0" + r.gMobile : ""), roster: rf ? rf.name : null });
+          continue;
+        }
         load.set(g, (load.get(g) || 0) + 1);
       }
       const ago = (months) => { const d = J.d2j(asOf); return J.addMonths(d.jy, d.jm, d.jd, -months); };
@@ -780,12 +785,13 @@ function compute(data, req) {
         const eligible = [], out = Object.fromEntries(reasons.map((x) => [x.key, []]));
         for (const p of data.people) {
           const a = assess(p.name);
-          if (a.why) out[a.why].push(p.nameRaw);
+          if (a.why) out[a.why].push(a);
           else eligible.push({ name: p.nameRaw, free: a.maxGuarantees - a.guarantees });
         }
         const fa = (a, b) => a.localeCompare(b, "fa");
         eligible.sort((a, b) => fa(a.name, b.name));
-        guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key] })), noReq, unknownG, unknownGNames, activeN: active.length };
+        // هر دلیل: فهرست افراد با جزئیات سنجششان (برای پیام تفکیک‌شده‌ی مدیر)
+        guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key].map((a) => a.name), people: out[x.key] })), noReq, unknownG, unknownGList, activeN: active.length };
       }
       review = { assess, resolve, rosterFind: data.rosterFind, queue: queueList, list: req.list, waitMedian: wait.median, hasGuarantor: req.hasGuarantor };
     }

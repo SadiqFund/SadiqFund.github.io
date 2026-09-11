@@ -65,28 +65,71 @@ async function download(fileId) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-// فهرست ضامن‌های مجاز: یک پیام خلاصه + فهرست خالص نام‌ها برای کپی در گزینه‌های فرم پُرس‌لاین
+// گزارش ضامن‌ها برای مدیر: خلاصه، بیرون‌مانده‌ها به تفکیک دلیل، ضامن‌های جور نشده، فهرست مجاز
 async function sendGuarantors(r) {
   const g = r.guarantors;
   if (!g || !NOTIFY_ID) return;
   const n = (x) => D.fmtInt(x);
-  const list = (arr) => (arr.length ? arr.join("، ") : "—");
-  const rs = g.reasons || [];
+  const rs = (g.reasons || []).filter((x) => x.names.length);
+  const outN = rs.reduce((s, x) => s + x.names.length, 0);
+  const days = (d) => `${n(d)} روز`;
+  const money = (v) => D.fmtMoney(v, true);
+  // جزئیات کوتاه هر نفر، بسته به دلیل
+  const detail = {
+    late: (a) => `${n(a.late)} قسط معوق`,
+    history: (a) => `بیشترین دیرکرد ${days(a.maxDelay)}`,
+    inactive: (a) => (a.lastTxDays == null ? "هیچ تراکنشی ندارد" : `آخرین تراکنش ${days(a.lastTxDays)} پیش از اکسل`),
+    tenure: (a) => `${(a.tenureDays / 30.44).toLocaleString("fa-IR", { maximumFractionDigits: 1 })} ماه عضویت`,
+    withdraw: () => "",
+    capital: (a) => `سرمایه ${money(a.capital)}`,
+    debt: (a) => `مانده‌ی وام ${money(a.activeDebt)}، سرمایه ${money(a.capital)}`,
+    cap: (a) => `ضامن ${n(a.guarantees)} وام از سقف ${n(a.maxGuarantees)}`,
+  };
+
+  // ۱. خلاصه
+  const gaps = [];
+  if (g.noReq) gaps.push(`• ${n(g.noReq)} وام در جریان درخواستی در فرم ندارند؛ ضامنشان معلوم نیست.`);
+  if (g.unknownG) gaps.push(`• ضامنِ ${n(g.unknownG)} وام در جریان با هیچ عضوی جور نشد (جزئیات در پیام‌های بعد).`);
   await notify(
-    `👥 ضامن‌های مجاز بر اساس اکسل ${D.fmtDate(r.asOf)}\n` +
-    `شرط‌ها:\n${rs.map((x) => "• " + x.rule).join("\n")}\n\n` +
-    `✅ مجاز: ${n(g.eligible.length)} نفر (فهرست در پیام بعد)\n\n` +
-    `خارج از فهرست (هر نفر فقط با اولین دلیل):\n` +
-    rs.filter((x) => x.names.length).map((x) => `• ${x.label} (${n(x.names.length)}): ${list(x.names)}`).join("\n") +
-    (g.noReq ? `\n\n⚠️ برای ${n(g.noReq)} وام در جریان درخواستی در فرم پیدا نشد، پس ضامنشان معلوم نیست و در شمارش سقف ضمانت نیامده‌اند.` : "") +
-    (g.unknownG ? `\n⚠️ ضامنِ ${n(g.unknownG)} وام در جریان با هیچ عضوی جور نشد (نه از روی موبایل، نه نام). نامی که در فرم نوشته شده: ${[...new Set(g.unknownGNames || [])].join("، ")}` : "")
+    `👥 گزارش ضامن‌ها، اکسل ${D.fmtDate(r.asOf)}\n\n` +
+    `✅ مجاز: ${n(g.eligible.length)} نفر\n` +
+    `⛔ خارج از فهرست: ${n(outN)} نفر\n` +
+    rs.map((x) => `      ${x.label}: ${n(x.names.length)}`).join("\n") +
+    (gaps.length ? `\n\n⚠️ داده‌ی ناقص برای شمارش سقف ضمانت:\n${gaps.join("\n")}` : "") +
+    `\n\n—————\nشرط‌ها:\n${(g.reasons || []).map((x) => "• " + x.rule).join("\n")}`
   );
-  // فهرست خالص، هر نام در یک خط؛ اگر طولانی بود، در چند پیام
-  const names = [...new Set(g.eligible.map((e) => e.name))]; // نام‌های تکراری (دو حساب هم‌نام) یک بار
-  let chunk = [];
-  const flush = async () => { if (chunk.length) { await notify(chunk.join("\n")); chunk = []; } };
-  for (const nm of names) { if ((chunk.join("\n") + "\n" + nm).length > 3500) await flush(); chunk.push(nm); }
-  await flush();
+
+  // پیام‌های چندبخشی: بخش‌ها تا جای ممکن در یک پیام می‌مانند
+  const sendBlocks = async (blocks) => {
+    let buf = "";
+    for (const b of blocks) {
+      if (buf && (buf + "\n\n" + b).length > 3500) { await notify(buf); buf = ""; }
+      if (b.length > 3500) { // بخش خیلی بلند: خط‌به‌خط
+        for (const line of b.split("\n")) { if (buf && (buf + "\n" + line).length > 3500) { await notify(buf); buf = ""; } buf += (buf ? "\n" : "") + line; }
+      } else buf += (buf ? "\n\n" : "") + b;
+    }
+    if (buf) await notify(buf);
+  };
+
+  // ۲. خارج از فهرست، به تفکیک دلیل (هر نفر فقط با اولین دلیلش)
+  // ترتیب داخل هر بخش: شدیدتر اول
+  const order = { late: (a) => -a.late, history: (a) => -a.maxDelay, inactive: (a) => -(a.lastTxDays == null ? 1e9 : a.lastTxDays),
+    tenure: (a) => a.tenureDays, capital: (a) => a.capital, debt: (a) => -(a.activeDebt / Math.max(a.capital, 1)), cap: (a) => -(a.guarantees - a.maxGuarantees) };
+  if (rs.length) {
+    await sendBlocks(rs.map((x) => `⛔ ${x.label} (${n(x.names.length)} نفر)\n` +
+      [...x.people].sort((p, q) => (order[x.key] ? order[x.key](p) - order[x.key](q) : 0)).map((a) => { const d = detail[x.key] ? detail[x.key](a) : ""; return `• ${a.name}${d ? `: ${d}` : ""}`; }).join("\n")));
+  }
+
+  // ۳. ضامن‌های جور نشده
+  if (g.unknownGList && g.unknownGList.length) {
+    await sendBlocks([`⚠️ ضامن‌هایی که با هیچ عضوی جور نشدند (${n(g.unknownGList.length)} وام)\n` +
+      g.unknownGList.map((u) => `• وام ${u.borrower}: ضامن ${u.roster ? `${u.roster} (در فهرست اعضا هست ولی حساب صندوق ندارد)` : u.typed ? `«${u.typed}»` : "خالی"}`).join("\n") +
+      "\n\nاگر شماره مال یکی از اعضاست، آن را به‌عنوان «شماره ۲» در فایل اطلاعات اعضا بگذارید و متن NAME_FIXES را دوباره بسازید؛ اگر نام غلط است، یک خط اصلاح دستی اضافه کنید."]);
+  }
+
+  // ۴. فهرست مجاز
+  const names = [...new Set(g.eligible.map((e) => e.name))];
+  await sendBlocks([`✅ ضامن‌های مجاز (${n(names.length)} نفر)\n` + names.map((nm, i) => `${n(i + 1)}. ${nm}`).join("\n")]);
 }
 
 // ---------- پُرس‌لاین: جایگزینی گزینه‌های سؤال کشویی «ضامن» با فهرست مجاز
