@@ -917,10 +917,15 @@ const THEME = {
 
 const REPORT_CSS = `
 :root{--bg:${THEME.bg};--card:${THEME.card};--border:${THEME.border};--ink:${THEME.text};--muted:${THEME.muted};--primary:${THEME.primary};--primary-dark:${THEME.primaryDark};--primary-soft:${THEME.primarySoft};--accent:${THEME.accent};
---good:${THEME.good};--ahead:${THEME.ahead};--late1:${THEME.late1};--late2:${THEME.late2};--s-repay:${THEME.sRepay};--s-fee:${THEME.sFee};--s-deposit:${THEME.sDeposit};--s-other:${THEME.sOther};--r:${THEME.radius};--hero:${THEME.heroGradient};--shadow:${THEME.shadow}}
+--good:${THEME.good};--ahead:${THEME.ahead};--late1:${THEME.late1};--late2:${THEME.late2};--s-repay:${THEME.sRepay};--s-fee:${THEME.sFee};--s-deposit:${THEME.sDeposit};--s-other:${THEME.sOther};--r:${THEME.radius};--hero:${THEME.heroGradient};--shadow:${THEME.shadow};
+--soft:#F6F8FC;--grid:#E7ECF3;--grid2:#C8D2E0;--selbg:rgba(0,73,232,.07);--icobg:#E6EEFF;--track:#DCE8FE;--chip:#fff;color-scheme:light}
+/* حالت تیره: وقتی گوشی یا رایانه روی حالت شب است */
+@media (prefers-color-scheme:dark){:root{--bg:#0B1220;--card:#131C2E;--border:#243049;--ink:#E7ECF5;--muted:#93A1B8;--primary:#4F86FF;--primary-dark:#2F6BF0;--good:#4F86FF;--ahead:#8FB4FF;--late1:#F0A3AC;--late2:#FF5A67;--s-repay:#4F86FF;--s-fee:#22B8B2;--s-deposit:#E88A1A;
+--soft:#1A2439;--grid:#1F2A40;--grid2:#34425F;--selbg:rgba(79,134,255,.13);--icobg:#1E2A44;--track:#26324C;--chip:#131C2E;--shadow:none;color-scheme:dark}
+.hero{box-shadow:0 0 0 1px rgba(255,255,255,.06)}.tip{background:#E7ECF5;color:#0B1220}.pill{box-shadow:none}}
 *{box-sizing:border-box;margin:0;padding:0}
 html{background:var(--bg);-webkit-text-size-adjust:100%}
-body{font-family:"Dana FaNum",Tahoma,sans-serif;color:var(--ink);font-size:15px;line-height:1.8;font-variant-numeric:tabular-nums}
+body{font-family:"Dana FaNum",Tahoma,sans-serif;color:var(--ink);background:var(--bg);font-size:15px;line-height:1.8;font-variant-numeric:tabular-nums}
 .page{max-width:1120px;margin:0 auto;padding:0 16px 32px}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:18px 0 16px}
 .brand{display:flex;align-items:center;gap:12px}
@@ -956,7 +961,7 @@ body{font-family:"Dana FaNum",Tahoma,sans-serif;color:var(--ink);font-size:15px;
 .shead{display:flex;align-items:center;gap:10px}
 .ico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:none}
 .ico svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.i-blue{background:#E6EEFF;color:var(--primary)} .i-teal{background:#E0F5F3;color:#0B8480} .i-violet{background:#EFEAFE;color:#6A4FC7} .i-amber{background:#FFF1DE;color:#B86200}
+.i-blue,.i-teal,.i-violet,.i-amber{background:var(--icobg);color:var(--primary)} /* آیکن‌ها یکدست؛ رنگ‌های دیگر فقط در نمودارها معنا دارند */
 .stat .k{font-size:13px;color:var(--muted);line-height:1.5}
 .stat .v{font-size:28px;font-weight:800;line-height:1.3;white-space:nowrap;margin-top:4px}
 .stat .v small{font-size:13px;font-weight:600;color:var(--muted);margin-right:4px}
@@ -979,7 +984,7 @@ ul.key b{font-weight:800}
 /* کارت نمودار: نمودار پهن + ستون کناری «این ماه» */
 .chartcard{display:grid;grid-template-columns:1fr;gap:16px}
 .cc-main{display:flex;flex-direction:column;min-width:0}
-.side{background:#F6F8FC;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:6px}
+.side{background:var(--soft);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:6px}
 .side-h{font-size:14px;font-weight:600;color:var(--ink);margin-bottom:4px}
 .side-h span{display:block;font-size:12px;font-weight:400;color:var(--muted)}
 .side .v{font-size:30px;font-weight:800;line-height:1.35}
@@ -990,7 +995,7 @@ ul.key b{font-weight:800}
 .cmp{font-size:12px;color:var(--muted);margin-top:auto;padding-top:10px;border-top:1px dashed var(--border)}
 .cmp b{color:var(--ink)}
 .chips{display:flex;flex-direction:column;gap:6px;margin-top:6px}
-.chips span{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:6px 10px;font-size:12px;color:var(--muted);box-shadow:0 1px 2px rgba(16,24,40,.05);border-right:3px solid #0B8480}
+.chips span{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--chip);border-radius:10px;padding:6px 10px;font-size:12px;color:var(--muted);box-shadow:0 1px 2px rgba(16,24,40,.05);border-right:3px solid #0B8480}
 .chips b{color:var(--ink);font-size:14px;font-weight:800;white-space:nowrap}
 .chips .more{justify-content:center;border-right:0;background:transparent;box-shadow:none}
 /* وام‌های در جریان: در دسکتاپ دو نیمه کنار هم */
@@ -1003,7 +1008,7 @@ ul.key b{font-weight:800}
 .ring .rt b{display:block;color:var(--ink);font-size:15px;font-weight:800}
 .ring text{font-family:inherit}
 .ring .rt{flex:1;min-width:0}
-.ring .rt>div{background:#F6F8FC;border-radius:12px;padding:10px 14px}
+.ring .rt>div{background:var(--soft);border-radius:12px;padding:10px 14px}
 .ring .rt b{white-space:nowrap}
 /* وقتی کارت جا دارد: هر عدد در یک ردیف، عنوان راست و مبلغ چپ؛ هیچ‌وقت از کارت بیرون نمی‌زند */
 @container (min-width:380px){.ring{gap:24px}.ring .rt>div{display:flex;justify-content:space-between;align-items:center;gap:10px}.ring .rt b{order:2;font-size:17px}}
@@ -1021,13 +1026,13 @@ ul.key b{font-weight:800}
 .cols i{transition:filter .12s}.cols i.hot{filter:brightness(1.18) saturate(1.1)}
 .chart{direction:ltr;padding-left:60px;flex:1 1 auto;display:flex;flex-direction:column}
 .plot{position:relative;height:190px;flex:1 1 auto;min-height:190px}
-.gl{position:absolute;left:0;right:0;border-top:1px solid #E7ECF3}
+.gl{position:absolute;left:0;right:0;border-top:1px solid var(--grid)}
 .gl span{position:absolute;right:calc(100% + 8px);top:-.85em;font-size:11px;color:var(--muted);white-space:nowrap;direction:rtl;line-height:1.6}
-.gl.base{border-top-color:#C8D2E0}
+.gl.base{border-top-color:var(--grid2)}
 .avg{position:absolute;left:0;right:0;border-top:2px dashed #8A96A0;pointer-events:none;z-index:2}
 .cols{position:absolute;inset:0;display:flex}
 .cols button{flex:1;min-width:0;height:100%;border:0;background:transparent;cursor:pointer;display:flex;flex-direction:column-reverse;align-items:center;gap:2px;padding:0;border-radius:4px 4px 0 0}
-.cols button.sel{background:rgba(0,73,232,.07)}
+.cols button.sel{background:var(--selbg)}
 .cols i{display:block;width:min(36px,60%);flex:none}
 .cols i.top{border-radius:6px 6px 0 0}
 .xl{display:flex;height:1.9em;margin-top:4px}
@@ -1063,7 +1068,30 @@ footer{padding:20px 4px 0;font-size:12px;color:var(--muted);text-align:center}
 /* کم‌رنگ شدن بقیه‌ی ستون‌ها وقتی روی یکی هستید */
 .cols i{transition:filter .12s,opacity .15s}
 .plot.dim .cols button:not(.hov) i{opacity:.32}
+/* رنگ حلقه‌ها از متغیرها (برای حالت تیره) */
+.rtrack{stroke:var(--track)}.rp{stroke:var(--primary)}.rl{fill:var(--ink)}.rs{fill:var(--muted)}
+/* برچسب رشد ۱۲ ماه زیر عدد دارایی */
+.gbadge{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.16);border-radius:999px;padding:2px 12px;font-size:13px;font-weight:600;color:#fff}
+.gbadge b{font-weight:800}
+/* نبض آرام آخرین نقطه‌ی نمودار رشد («امروز») */
+@keyframes pulse{0%{transform:scale(1);opacity:.55}70%{transform:scale(3.2);opacity:0}100%{transform:scale(3.2);opacity:0}}
+.gpulse{transform-box:fill-box;transform-origin:center;animation:pulse 2.6s ease-out infinite;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.gpulse{animation:none;opacity:0}}
+/* عنوان گروه‌ها */
+.grp{grid-column:1/-1;font-size:15px;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:10px;margin:8px 2px -6px}
+.grp::after{content:"";flex:1;border-top:1px solid var(--border)}
+/* وضعیت بازپرداخت: دایره‌ها در دسکتاپ، نوار چندرنگ در موبایل */
+.sbar{display:none;height:22px;border-radius:8px;overflow:hidden;gap:2px;margin:12px 0 14px}
+.sbar i{display:block;transform-origin:100% 50%}
+.sub-m{display:none}
+/* «این ماه» فشرده بالای نمودار، فقط در موبایل و تبلت */
+.mstrip{display:none;align-items:center;gap:12px;background:var(--soft);border-radius:12px;padding:10px 14px;margin:2px 0 10px;font-size:12px;color:var(--muted);line-height:1.7}
+.mstrip svg{flex:none}.mstrip .mh{font-weight:600;color:var(--ink)}.mstrip b{color:var(--ink)}
+.mstrip .mv{font-size:24px;font-weight:800;color:var(--ink);line-height:1.25;white-space:nowrap}.mstrip .mv small{font-size:12px;font-weight:600;color:var(--muted);margin-right:3px}
+@media (max-width:899px){.mstrip{display:flex}.chartcard .side{display:none}}
+@media (max-width:599px){.dots{display:none}.sbar{display:flex}.sub-d{display:none}.sub-m{display:inline}}
 /* انیمیشن ورود (فقط بار اول هر بخش؛ اگر گوشی «کاهش حرکت» را خواسته باشد، خاموش است) */
+@keyframes growx{from{transform:scaleX(0)}}
 @keyframes rise{from{transform:scaleY(0)}}
 @keyframes draw{from{stroke-dashoffset:1}}
 @keyframes fade{from{opacity:0}}
@@ -1072,15 +1100,17 @@ footer{padding:20px 4px 0;font-size:12px;color:var(--muted);text-align:center}
 .anim [data-anim]:not(.in) .cols button{transform:scaleY(0)}
 .anim [data-anim]:not(.in) .gline{stroke-dashoffset:1}
 .anim [data-anim]:not(.in) .garea,.anim [data-anim]:not(.in) .gdot{opacity:0}
-.anim [data-anim]:not(.in) .dot,.anim [data-anim]:not(.in) .rp{opacity:0}
+.anim [data-anim]:not(.in) .dot,.anim [data-anim]:not(.in) .rp,.anim [data-anim]:not(.in) .sbar i,.anim [data-anim]:not(.in) .gpulse{opacity:0}
 .cols button{transform-origin:50% 100%}
-.anim .in:not(.done) .cols button{animation:rise .7s cubic-bezier(.2,.75,.25,1) both;animation-delay:calc(var(--i,0)*45ms)}
+.anim .in:not(.done) .cols button{animation:rise 1.15s cubic-bezier(.22,.61,.36,1) both;animation-delay:calc(var(--i,0)*90ms)}
 .gline{stroke-dasharray:1}
-.anim .in:not(.done) .gline{animation:draw .9s cubic-bezier(.4,.1,.2,1) both}
-.anim .in:not(.done) .garea{animation:fade .8s .2s both}
-.anim .in:not(.done) .gdot{animation:fade .3s .75s both}
-.anim .in:not(.done) .dots .dot{animation:pop .35s cubic-bezier(.2,.8,.3,1.2) both;animation-delay:calc(var(--i,0)*9ms)}
-.anim .in:not(.done) .rp{animation:ringin .9s cubic-bezier(.3,.1,.2,1) both}
+.anim .in:not(.done) .gline{animation:draw 1.6s cubic-bezier(.33,.1,.25,1) both}
+.anim .in:not(.done) .garea{animation:fade 1.3s .35s both}
+.anim .in:not(.done) .gdot{animation:fade .5s 1.35s both}
+.anim .in:not(.done) .gpulse{animation:fade .5s 1.6s both}
+.anim .in:not(.done) .dots .dot{animation:pop .5s cubic-bezier(.2,.8,.3,1.15) both;animation-delay:calc(var(--i,0)*16ms)}
+.anim .in:not(.done) .sbar i{animation:growx 1.2s cubic-bezier(.22,.61,.36,1) both;animation-delay:calc(var(--i,0)*150ms)}
+.anim .in:not(.done) .rp{animation:ringin 1.5s cubic-bezier(.25,.1,.25,1) both}
 `;
 
 // آیکن‌های ساده (خطی)
@@ -1143,6 +1173,8 @@ function dashRuntime() {
     g += `<path class="gline" pathLength="1" d="M${pts.join("L")}" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     g += `<line id="gGuide" y1="${mt}" y2="${mt + ph}" stroke="#fff" stroke-opacity=".7" stroke-width="1" stroke-dasharray="3 3"/>`;
     const rr = pw / Math.max(1, G.snaps.length - 1) < 14 ? 2.5 : 3.5; // در صفحه‌ی باریک، نقطه‌ها کوچک‌تر
+    const ls = G.snaps[G.snaps.length - 1];
+    g += `<circle class="gpulse" cx="${X(ls.d)}" cy="${Y(ls.v)}" r="5" fill="#fff"/>`; // نبض «امروز»
     G.snaps.forEach((s, i) => { g += `<circle class="gdot" data-i="${i}" cx="${X(s.d)}" cy="${Y(s.v)}" r="${rr}" fill="#fff" stroke="#0049E8" stroke-width="1.5"/>`; });
     g += `<rect x="${ml}" y="0" width="${pw}" height="${H}" fill="transparent"/>`;
     box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" tabindex="0" role="img" aria-label="نمودار رشد دارایی کل صندوق از ${G.start}. با کلیدهای چپ و راست بین تاریخ‌ها جابه‌جا شوید.">${g}</svg><div class="gtip" hidden></div>`;
@@ -1158,11 +1190,10 @@ function dashRuntime() {
     const set = (i, show) => {
       growth.sel = i;
       const s = G.snaps[i];
-      svg.querySelectorAll("circle").forEach((c) => c.setAttribute("r", +c.dataset.i === i ? 6.5 : rr));
+      svg.querySelectorAll("circle.gdot").forEach((c) => c.setAttribute("r", +c.dataset.i === i ? 6.5 : rr));
       const gl = svg.querySelector("#gGuide");
       gl.setAttribute("x1", X(s.d)); gl.setAttribute("x2", X(s.d));
-      $("growthRead").innerHTML = `${s.label}: <b>${money(s.v, true)}</b>`;
-      if (show) bubble(s);
+      if (show) bubble(s); // مقدار هر ماه در حباب؛ زیر عدد دارایی برچسب ثابت رشد ۱۲ ماه می‌ماند
     };
     const pick = (e) => {
       const r = svg.getBoundingClientRect();
@@ -1281,9 +1312,9 @@ function dashRuntime() {
   const nums = [...document.querySelectorAll(".num[data-to]")];
   if (anim) nums.forEach((el) => { el.dataset.txt = el.textContent; el.textContent = (0).toLocaleString("fa-IR", { minimumFractionDigits: +el.dataset.dec, maximumFractionDigits: +el.dataset.dec }); });
   const count = (el) => {
-    const to = +el.dataset.to, dec = +el.dataset.dec, t0 = performance.now(), dur = 850;
+    const to = +el.dataset.to, dec = +el.dataset.dec, t0 = performance.now(), dur = 1500;
     const tick = (t) => {
-      const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 4); // پایان نرم
       el.textContent = k < 1 ? (to * e).toLocaleString("fa-IR", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : el.dataset.txt;
       if (k < 1) requestAnimationFrame(tick);
     };
@@ -1293,7 +1324,7 @@ function dashRuntime() {
     if (sec.classList.contains("in")) return;
     sec.classList.add("in");
     if (anim) sec.querySelectorAll(".num[data-to]").forEach(count);
-    setTimeout(() => sec.classList.add("done"), 1500); // بعد از این، تغییر بازه یا اندازه‌ی صفحه دیگر انیمیشن ندارد
+    setTimeout(() => sec.classList.add("done"), 3200); // بعد از این، تغییر بازه یا اندازه‌ی صفحه دیگر انیمیشن ندارد
   };
   const secs = document.querySelectorAll("[data-anim]");
   if (anim && "IntersectionObserver" in window) {
@@ -1317,10 +1348,10 @@ const fontFaces = (fonts) =>
 function ringSVG(pct, label, sub, size, stroke = 10) {
   const c = size / 2, rad = c - stroke / 2 - 2, len = 2 * Math.PI * rad, p = Math.max(0, Math.min(1, pct));
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(label)} ${esc(sub)}">` +
-    `<circle cx="${c}" cy="${c}" r="${rad}" fill="none" stroke="#DCE8FE" stroke-width="${stroke}"/>` +
+    `<circle class="rtrack" cx="${c}" cy="${c}" r="${rad}" fill="none" stroke="#DCE8FE" stroke-width="${stroke}"/>` +
     (p > 0 ? `<circle class="rp" cx="${c}" cy="${c}" r="${rad}" fill="none" stroke="${THEME.primary}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${(len * p).toFixed(2)} ${len.toFixed(2)}" transform="rotate(-90 ${c} ${c})"/>` : "") +
-    `<text x="50%" y="${sub ? "47%" : "54%"}" text-anchor="middle" dominant-baseline="middle" font-weight="800" font-size="${Math.round(size / 5)}" fill="${THEME.text}">${label}</text>` +
-    (sub ? `<text x="50%" y="68%" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="${THEME.muted}">${sub}</text>` : "") +
+    `<text x="50%" y="${sub ? "47%" : "54%"}" text-anchor="middle" dominant-baseline="middle" font-weight="800" font-size="${Math.round(size / 5)}" fill="${THEME.text}" class="rl">${label}</text>` +
+    (sub ? `<text x="50%" y="68%" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="${THEME.muted}" class="rs">${sub}</text>` : "") +
     `</svg>`;
 }
 
@@ -1359,7 +1390,7 @@ function renderReport(r, fonts) {
     const w = r.wait;
     stats.push(`<div class="card stat s-wait" data-anim>${head("clock", "i-violet", "زمان انتظار برای وام")}
       <div class="duo">
-        <div><div class="v">${w.median != null ? `${intN(w.median)} <small>روز</small>` : "—"}</div><div class="kk">زمان انتظار</div>
+        <div><div class="v">${w.median == null ? "—" : w.median <= 60 ? `${intN(w.median)} <small>روز</small>` : `${numSpan((w.median / 30.44).toLocaleString("fa-IR", { maximumFractionDigits: 1 }))} <small>ماه</small>`}</div>
           <div class="c">${w.n ? `نیمی از ${fmtInt(w.n)} وام ${fmtInt(CONFIG.waitMonths)} ماه اخیر در همین مدت یا کمتر پرداخت شده‌اند` : `وامی با درخواست ثبت‌شده در ${fmtInt(CONFIG.waitMonths)} ماه اخیر نبود`}</div></div>
         <div class="sep"></div>
         <div><div class="v">${intN(w.queue)} <small>درخواست</small></div><div class="kk">در صف</div><div class="c">هنوز وامشان پرداخت نشده</div></div>
@@ -1372,6 +1403,19 @@ function renderReport(r, fonts) {
   const cm = r.months[r.months.length - 1] || {};
   const curColl = (cm.repay || 0) + (cm.fee || 0) + (cm.deposit || 0) + (cm.other || 0);
 
+  // برچسب رشد ۱۲ ماه اخیر زیر عدد دارایی
+  const growthBadge = (() => {
+    const G = r.growth, last = G.snaps[G.snaps.length - 1];
+    if (!last || !G.series.length) return "";
+    const g0 = r.asOf - last.d, d = J.d2j(r.asOf), target = J.addMonths(d.jy, d.jm, d.jd, -12) - g0;
+    if (target < 0) return "";
+    let base = null;
+    for (const p of G.series) { if (p[0] <= target) base = p[1]; else break; }
+    if (!base) return "";
+    const pct = Math.round((last.v / base - 1) * 100);
+    return `<span class="gbadge">${pct >= 0 ? "▲" : "▼"} <b>${fmtInt(Math.abs(pct))}٪</b> ${pct >= 0 ? "رشد" : "کاهش"} در ۱۲ ماه اخیر</span>`;
+  })();
+
   // پیش‌نمایش لینک (تلگرام و …): عنوان + یک خط خلاصه
   const ogDesc = `دارایی کل: ${fmtMoney(r.capital, true)}، به‌روز تا ${upd}`;
 
@@ -1382,6 +1426,7 @@ function renderReport(r, fonts) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="${THEME.primary}">
+<meta name="color-scheme" content="light dark">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(ogDesc)}">
 <meta property="og:type" content="website">
@@ -1402,22 +1447,24 @@ ${REPORT_CSS}
 <header class="top">
   <div class="brand">
     <div class="logo" aria-hidden="true">${ICONS.wallet}</div>
-    <div><div class="fund">${esc(r.fundName)}</div><h1>داشبورد صندوق</h1></div>
+    <div><div class="fund">داشبورد صندوق</div><h1>${esc(r.fundName)}</h1></div>
   </div>
   <div class="pill">تاریخ گزارش: <b>${upd}</b></div>
 </header>
 
 <main class="grid-main">
+  <div class="grp">نمای کلی</div>
   <section class="card hero span12" data-anim>
     <div class="label">دارایی کل صندوق</div>
     <div class="big">${moneyParts(r.capital)}</div>
-    <div class="readout" id="growthRead" aria-live="polite"></div>
+    <div class="readout" id="growthRead">${growthBadge}</div>
     <div class="growth" id="growth"></div>
     <p class="hint">رشد دارایی کل از ${r.growth.start}. روی نمودار بزنید یا نشانگر را ببرید تا دارایی صندوق در اول هر ماه را ببینید.</p>
   </section>
 
   <div class="stats span12${r.wait ? " has-wait" : ""}">${stats.join("")}</div>
 
+  <div class="grp">وام‌ها</div>
   <section class="card span12 lip" data-anim>
     <div class="lip-a">
       <h2>وام‌های در جریان</h2>
@@ -1433,7 +1480,8 @@ ${REPORT_CSS}
     </div>
     <div class="lip-b">
       <h3>وضعیت بازپرداخت</h3>
-      <div class="sub">هر دایره یک وام در جریان است</div>
+      <div class="sub"><span class="sub-d">هر دایره یک وام در جریان است</span><span class="sub-m">سهم وام‌های در جریان در هر وضعیت</span></div>
+      <div class="sbar" aria-hidden="true">${["ok", "ahead", "late1", "late2"].filter((k) => s[k] > 0).map((k, i) => `<i class="s-${k}" style="flex:${s[k]};--i:${i}"></i>`).join("")}</div>
       <div class="dots" aria-hidden="true">${r.dots.map((d, i) => `<span class="dot s-${d}" style="--i:${i}"></span>`).join("")}</div>
       <ul class="key">
         <li><span class="dot s-ok"></span><b>${fmtInt(s.ok)}</b> وام طبق برنامه</li>
@@ -1448,6 +1496,7 @@ ${REPORT_CSS}
   <section class="card span12 chartcard" data-kind="loans" id="ch-loans" data-anim>
     <div class="cc-main">
       <div class="chead"><div><h2>وام پرداخت‌شده</h2><div class="sub">مبلغ وام‌هایی که صندوق در هر ماه به اعضا داده است</div></div>${ranges()}</div>
+      <div class="mstrip"><div class="mv">${intN(mo.loanN)} <small>وام</small></div><div><div><span class="mh">این ماه</span> · ${mo.loanN ? `به ارزش <b>${fmtMoney(mo.loanAmt, true)}</b>` : "هنوز وامی پرداخت نشده"}</div>${mo.avg12 ? `<div>میانگین ماهانه‌ی ${fmtInt(CONFIG.waitMonths)} ماه اخیر: <b>${fmtMoney(mo.avg12, true)}</b></div>` : ""}</div></div>
       <div class="legend"></div>
       <div class="chart"></div>
       <div class="slegend"></div>
@@ -1462,9 +1511,11 @@ ${REPORT_CSS}
     </aside>
   </section>
 
+  <div class="grp">ورودی صندوق</div>
   <section class="card span12 chartcard" data-kind="coll" id="ch-coll" data-anim>
     <div class="cc-main">
       <div class="chead"><div><h2>مجموع وصولی</h2><div class="sub">هر چه در هر ماه وارد صندوق شده، به تفکیک نوع واریز</div></div>${ranges()}</div>
+      <div class="mstrip">${mo.due ? ringSVG(collectPct / 100, `${fmtInt(Math.round(collectPct))}٪`, "", 64, 7) : ""}<div><div><span class="mh">این ماه</span> · وصول اقساط</div>${mo.due ? `<div class="mv">${intN(mo.paid)} <small>قسط از ${fmtInt(mo.due)} قسط</small></div>` : `<div>هنوز قسطی سررسید نشده</div>`}<div>وصولی این ماه تا امروز: <b>${fmtMoney(curColl, true)}</b></div></div></div>
       <div class="legend"></div>
       <div class="chart"></div>
       <div class="slegend"></div>
