@@ -65,8 +65,10 @@ async function download(fileId) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-// گزارش ضامن‌ها برای مدیر: خلاصه، بیرون‌مانده‌ها به تفکیک دلیل، ضامن‌های جور نشده، فهرست مجاز
-async function sendGuarantors(r) {
+// گزارش ضامن‌ها برای مدیر: یک پیام خلاصه، جزئیات در بخش‌های جمع‌شونده‌ی تلگرام (با لمس باز می‌شوند)
+// plStatus: وضعیت گزینه‌های فرم پُرس‌لاین که در خط خلاصه می‌آید
+const escH = (x) => String(x == null ? "" : x).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+async function sendGuarantors(r, plStatus) {
   const g = r.guarantors;
   if (!g || !NOTIFY_ID) return;
   const n = (x) => D.fmtInt(x);
@@ -74,68 +76,66 @@ async function sendGuarantors(r) {
   const outN = rs.reduce((s, x) => s + x.names.length, 0);
   const days = (d) => `${n(d)} روز`;
   const money = (v) => D.fmtMoney(v, true);
-  // جزئیات کوتاه هر نفر، بسته به دلیل
   const detail = {
     late: (a) => `${n(a.late)} قسط معوق`,
     history: (a) => `بیشترین دیرکرد ${days(a.maxDelay)}`,
-    inactive: (a) => (a.lastTxDays == null ? "هیچ تراکنشی ندارد" : `آخرین تراکنش ${days(a.lastTxDays)} پیش از اکسل`),
+    inactive: (a) => (a.lastTxDays == null ? "هیچ تراکنشی ندارد" : `آخرین تراکنش ${days(a.lastTxDays)} پیش`),
     tenure: (a) => `${(a.tenureDays / 30.44).toLocaleString("fa-IR", { maximumFractionDigits: 1 })} ماه عضویت`,
     withdraw: () => "",
     capital: (a) => `سرمایه ${money(a.capital)}`,
     debt: (a) => `مانده‌ی وام ${money(a.activeDebt)}، سرمایه ${money(a.capital)}`,
     cap: (a) => `ضامن ${n(a.guarantees)} وام از سقف ${n(a.maxGuarantees)}`,
   };
-
-  // ۱. خلاصه
-  const gaps = [];
-  if (g.noReq) gaps.push(`• ${n(g.noReq)} وام در جریان درخواستی در فرم ندارند؛ ضامنشان معلوم نیست.`);
-  const uList = g.unknownGList || [];
-  const dormant = uList.filter((u) => u.roster), unknown = uList.filter((u) => !u.roster);
-  if (dormant.length) gaps.push(`• ضامنِ ${n(dormant.length)} وام در جریان عضو راکد است و دیگر حساب صندوق ندارد.`);
-  if (unknown.length) gaps.push(`• ضامنِ ${n(unknown.length)} وام در جریان ناشناس است.`);
-  await notify(
-    `👥 گزارش ضامن‌ها، اکسل ${D.fmtDate(r.asOf)}\n\n` +
-    `✅ مجاز: ${n(g.eligible.length)} نفر\n` +
-    `⛔ خارج از فهرست: ${n(outN)} نفر\n` +
-    rs.map((x) => `      ${x.label}: ${n(x.names.length)}`).join("\n") +
-    (gaps.length ? `\n\n⚠️ داده‌ی ناقص برای شمارش سقف ضمانت:\n${gaps.join("\n")}` : "") +
-    `\n\n—————\nشرط‌ها:\n${(g.reasons || []).map((x) => "• " + x.rule).join("\n")}`
-  );
-
-  // پیام‌های چندبخشی: بخش‌ها تا جای ممکن در یک پیام می‌مانند
-  const sendBlocks = async (blocks) => {
-    let buf = "";
-    for (const b of blocks) {
-      if (buf && (buf + "\n\n" + b).length > 3500) { await notify(buf); buf = ""; }
-      if (b.length > 3500) { // بخش خیلی بلند: خط‌به‌خط
-        for (const line of b.split("\n")) { if (buf && (buf + "\n" + line).length > 3500) { await notify(buf); buf = ""; } buf += (buf ? "\n" : "") + line; }
-      } else buf += (buf ? "\n\n" : "") + b;
-    }
-    if (buf) await notify(buf);
-  };
-
-  // ۲. خارج از فهرست، به تفکیک دلیل (هر نفر فقط با اولین دلیلش)
-  // ترتیب داخل هر بخش: شدیدتر اول
   const order = { late: (a) => -a.late, history: (a) => -a.maxDelay, inactive: (a) => -(a.lastTxDays == null ? 1e9 : a.lastTxDays),
     tenure: (a) => a.tenureDays, capital: (a) => a.capital, debt: (a) => -(a.activeDebt / Math.max(a.capital, 1)), cap: (a) => -(a.guarantees - a.maxGuarantees) };
-  if (rs.length) {
-    await sendBlocks(rs.map((x) => `⛔ ${x.label} (${n(x.names.length)} نفر)\n` +
-      [...x.people].sort((p, q) => (order[x.key] ? order[x.key](p) - order[x.key](q) : 0)).map((a) => { const d = detail[x.key] ? detail[x.key](a) : ""; return `• ${a.name}${d ? `: ${d}` : ""}`; }).join("\n")));
-  }
+  const uList = g.unknownGList || [];
+  const dormant = uList.filter((u) => u.roster), unknown = uList.filter((u) => !u.roster);
 
-  // ۳. وام‌هایی که ضامنشان عضو فعال نیست
-  const uBlocks = [];
-  if (dormant.length) uBlocks.push(`ℹ️ ضامن عضو راکد (${n(dormant.length)} وام)\n` +
-    dormant.map((u) => `• وام ${u.borrower}: ضامن ${u.roster}`).join("\n") +
-    "\nاین ضامن‌ها حسابشان از صندوق بسته شده؛ اگر لازم است، از گیرنده‌ی وام ضامن تازه بخواهید.");
-  if (unknown.length) uBlocks.push(`⚠️ ضامن ناشناس (${n(unknown.length)} وام)\n` +
-    unknown.map((u) => `• وام ${u.borrower}: ضامن ${u.typed ? `«${u.typed}»` : "خالی"}`).join("\n") +
-    "\nاگر صاحب شماره را می‌شناسید، در سازنده‌ی NAME_FIXES در کادر دستی یک خط «نام | سال ورود | شماره» اضافه کنید و Secret را دوباره بسازید.");
-  if (uBlocks.length) await sendBlocks(uBlocks);
+  // خلاصه
+  const gaps = [];
+  if (g.noReq) gaps.push(`${n(g.noReq)} وام بی‌درخواست در فرم`);
+  if (dormant.length) gaps.push(`${n(dormant.length)} ضامن بدون حساب فعال`);
+  if (unknown.length) gaps.push(`${n(unknown.length)} ضامن ناشناس`);
+  const head =
+    `👥 <b>ضامن‌ها، اکسل ${escH(D.fmtDate(r.asOf))}</b>\n` +
+    `✅ مجاز: <b>${n(g.eligible.length)} نفر</b>${plStatus ? ` · ${escH(plStatus)}` : ""}\n` +
+    `⛔ خارج از فهرست: <b>${n(outN)} نفر</b>` +
+    (gaps.length ? `\n⚠️ ضامن نامعلوم برای شمارش سقف: ${escH(gaps.join("، "))}` : "");
 
-  // ۴. فهرست مجاز
+  // بخش‌های جمع‌شونده: [عنوان، خط‌ها]
   const names = [...new Set(g.eligible.map((e) => e.name))];
-  await sendBlocks([`✅ ضامن‌های مجاز (${n(names.length)} نفر)\n` + names.map((nm, i) => `${n(i + 1)}. ${nm}`).join("\n")]);
+  const sections = [];
+  sections.push([`ضامن‌های مجاز (${n(names.length)})`, names.map((nm, i) => `${n(i + 1)}. ${nm}`)]);
+  for (const x of rs) {
+    const lines = [...x.people].sort((p, q) => (order[x.key] ? order[x.key](p) - order[x.key](q) : 0))
+      .map((a) => { const d = detail[x.key] ? detail[x.key](a) : ""; return `• ${a.name}${d ? `: ${d}` : ""}`; });
+    sections.push([`⛔ ${x.label} (${n(x.names.length)})`, lines]);
+  }
+  if (dormant.length) sections.push([`ضامن بدون حساب فعال در صندوق (${n(dormant.length)} وام)`,
+    [...dormant.map((u) => `• وام ${u.borrower}: ضامن ${u.roster}`), "این ضامن‌ها از صندوق رفته‌اند یا راکدند؛ اگر لازم است، از گیرنده‌ی وام ضامن تازه بخواهید."]]);
+  if (unknown.length) sections.push([`ضامن ناشناس (${n(unknown.length)} وام)`,
+    [...unknown.map((u) => `• وام ${u.borrower}: ضامن ${u.typed ? `«${u.typed}»` : "خالی"}`), "اگر صاحب شماره را می‌شناسید، یک خط «نام | سال ورود | شماره» به فهرست NAME_FIXES اضافه کنید."]]);
+  sections.push(["شرط‌ها", (g.reasons || []).map((x) => "• " + x.rule)]);
+
+  // چیدن در پیام‌ها (سقف تلگرام ۴۰۹۶ نویسه؛ با حاشیه)
+  const LIMIT = 3600;
+  const block = (title, lines) => `\n\n<b>${escH(title)}</b>\n<blockquote expandable>${lines.map(escH).join("\n")}</blockquote>`;
+  const plainLen = (h) => h.replace(/<[^>]+>/g, "").replace(/&(amp|lt|gt);/g, "x").length;
+  const msgs = [head];
+  for (const [title, lines] of sections) {
+    // بخش خیلی بلند به چند تکه تقسیم می‌شود
+    let part = [], k = 0;
+    const flushPart = () => {
+      if (!part.length) return;
+      const b = block(k++ ? `${title} (ادامه)` : title, part);
+      if (plainLen(msgs[msgs.length - 1] + b) > LIMIT) msgs.push(b.replace(/^\n\n/, ""));
+      else msgs[msgs.length - 1] += b;
+      part = [];
+    };
+    for (const l of lines) { if (plainLen(part.concat(l).join("\n")) > LIMIT - 200) flushPart(); part.push(l); }
+    flushPart();
+  }
+  for (const m of msgs) await notify(m, true);
 }
 
 // ---------- پُرس‌لاین: جایگزینی گزینه‌های سؤال کشویی «ضامن» با فهرست مجاز
@@ -167,15 +167,14 @@ async function findGuarantorQuestion(quiet) {
 }
 
 async function updatePorsline(r, quiet) {
-  if (!PL_KEY || !PL_SURVEY || !r.guarantors) return;
+  if (!PL_KEY || !PL_SURVEY || !r.guarantors) return null;
   const names = [...new Set(r.guarantors.eligible.map((e) => e.name))];
   if (names.length < 3) { // محافظ: فهرست خیلی کوتاه احتمالاً یعنی داده‌ی ناقص؛ فرم را خالی نمی‌کنیم
-    await notify(`⚠️ فهرست ضامن‌های مجاز فقط ${D.fmtInt(names.length)} نفر است؛ برای احتیاط گزینه‌های فرم پُرس‌لاین عوض نشد.`);
-    return;
+    return { changed: false, text: `⚠️ فهرست فقط ${D.fmtInt(names.length)} نفر است؛ برای احتیاط فرم پُرس‌لاین عوض نشد` };
   }
   try {
     const qid = await findGuarantorQuestion(quiet);
-    if (!qid) return;
+    if (!qid) return { changed: false, text: "⚠️ سؤال ضامن در فرم پیدا نشد" };
     const q = await pl("GET", `/api/v2/surveys/${PL_SURVEY}/questions/${qid}/`);
     const old = Array.isArray(q.choices) ? q.choices : [];
     const key = (x) => String(x || "").replace(/[يى]/g, "ی").replace(/ك/g, "ک").replace(/[\u200c\u200e\u200f\s]/g, "");
@@ -183,18 +182,18 @@ async function updatePorsline(r, quiet) {
     // نام‌هایی که از قبل بوده‌اند شناسه‌ی خودشان را نگه می‌دارند؛ نام‌های تازه بدون شناسه ساخته می‌شوند
     const choices = names.map((n) => { const c = byName.get(key(n)); return c && c.id != null ? { id: c.id, name: n } : { name: n }; });
     const same = old.length === choices.length && choices.every((c) => c.id != null) && old.every((c) => names.some((n) => key(n) === key(c.name)));
-    if (same) { log("porsline: guarantor choices already up to date."); if (!quiet) await notify("ℹ️ گزینه‌های ضامن در فرم پُرس‌لاین از قبل به‌روز بود."); return; }
+    if (same) { log("porsline: guarantor choices already up to date."); return { changed: false, text: "فرم پُرس‌لاین به‌روز است" }; }
     await pl("PATCH", `/api/v2/surveys/${PL_SURVEY}/questions/${qid}/`, { choices });
     const added = choices.filter((c) => c.id == null).length;
     const removed = old.filter((c) => !names.some((n) => key(n) === key(c.name))).length;
     log(`porsline: guarantor choices updated.`);
-    await notify(`✅ گزینه‌های ضامن در فرم پُرس‌لاین به‌روز شد: ${D.fmtInt(names.length)} نفر (${D.fmtInt(added)} اضافه، ${D.fmtInt(removed)} حذف).`);
+    return { changed: true, text: `فرم پُرس‌لاین به‌روز شد (${D.fmtInt(added)} اضافه، ${D.fmtInt(removed)} حذف)` };
   } catch (e) {
     log(`porsline: update failed (${e.status || e.name}).`);
     const why = e.status === 401 || e.status === 403 ? "کلید API پذیرفته نشد یا اجازه‌ی ویرایش ندارد (شاید این کار اشتراک لازم دارد)."
       : e.status === 404 ? "پرسش‌نامه یا سؤال با این شناسه پیدا نشد."
       : e.status ? `پاسخ پُرس‌لاین: خطای ${e.status}.` : "به پُرس‌لاین وصل نشد (شاید از بیرون ایران در دسترس نیست).";
-    await notify(`⚠️ گزینه‌های ضامن در فرم پُرس‌لاین به‌روز نشد: ${why}\nفهرست بالا را دستی در فرم بچسبانید.`);
+    return { changed: false, error: true, text: `⚠️ فرم پُرس‌لاین به‌روز نشد: ${why}` };
   }
 }
 
@@ -399,8 +398,12 @@ async function sendReviews(r) {
   log(`review: ${fresh.length} new request card(s).`);
 }
 
-async function notify(text) {
+async function notify(text, html) {
   if (!NOTIFY_ID) return;
+  if (html) {
+    try { await tg("sendMessage", { chat_id: NOTIFY_ID, text, parse_mode: "HTML", disable_web_page_preview: true }); return; }
+    catch (e) { log("formatted notification rejected; sending plain text."); text = text.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"); }
+  }
   const t = text.length > 3900 ? text.slice(0, 3900) + "\n…" : text;
   try { await tg("sendMessage", { chat_id: NOTIFY_ID, text: t, disable_web_page_preview: true }); }
   catch (e) { log("could not send Telegram notification"); }
@@ -596,10 +599,11 @@ async function main() {
   const html = D.renderReport(r, FONTS);
   const prev = fs.existsSync(OUT_FILE) ? fs.readFileSync(OUT_FILE, "utf8") : "";
   if (fresh.fund) state.fund = { file_id: fresh.fund.meta.file_id, file_unique_id: fresh.fund.meta.file_unique_id, date: fresh.fund.meta.date };
-  // فهرست ضامن‌ها فقط وقتی دوباره فرستاده می‌شود که اکسل صندوق تازه باشد، اجرای دستی باشد یا فهرست عوض شده باشد
+  // گزارش کامل ضامن‌ها فقط با اکسل صندوق تازه یا وقتی فهرست مجاز عوض شده باشد؛ وگرنه یک خط در پیام داشبورد
   const gHash = r.guarantors ? fingerprint(r.guarantors.eligible.map((e) => e.name)) : null;
   const loud = !!fresh.fund || FORCE; // اجرایی که شما شروعش کرده‌اید؛ پیام کامل
-  const sendG = !!r.guarantors && (loud || gHash !== state.gHash);
+  const sendG = !!r.guarantors && (!!fresh.fund || gHash !== state.gHash);
+  const gLine = r.guarantors && !sendG ? `\n👥 فهرست ضامن‌ها تغییری نکرد (${D.fmtInt(r.guarantors.eligible.length)} نفر مجاز).` : "";
   if (gHash) state.gHash = gHash;
   const changed = html !== prev;
   if (changed) state.lastBuild = { reportDate: D.fmtDate(r.asOf), at: new Date().toISOString() };
@@ -608,14 +612,14 @@ async function main() {
   const reqCount = api ? `\n(اکنون ${D.fmtInt(api.req.list.length)} درخواست در فرم)` : "";
   if (!changed) {
     log("dashboard unchanged.");
-    if (loud || fresh.req) await notify(`ℹ️ ${fresh.fund || fresh.req ? "فایل دریافت شد" : "ساخت دوباره انجام شد"}، ولی داشبورد تغییری نکرد.\nتاریخ گزارش: ${D.fmtDate(r.asOf)}` +
+    if (loud || fresh.req) await notify(`ℹ️ ${fresh.fund || fresh.req ? "فایل دریافت شد" : "ساخت دوباره انجام شد"}، ولی داشبورد تغییری نکرد.\nتاریخ گزارش: ${D.fmtDate(r.asOf)}` + gLine +
       (warns.length ? "\n\nهشدارها:\n" + warns.map((c) => "• " + c.text).join("\n") : ""));
     else await notify(`📝 پاسخ‌های فرم درخواست وام در پُرس‌لاین تغییر کرد؛ داشبورد تغییری نکرد.${reqCount}`);
   } else {
     fs.writeFileSync(OUT_FILE, html);
     log("index.html rebuilt.");
     await notify(
-      `✅ داشبورد به‌روز شد${!fresh.fund && plChanged ? " (پاسخ تازه در فرم پُرس‌لاین)" : ""}\nتاریخ گزارش: ${D.fmtDate(r.asOf)}\nدارایی کل: ${D.fmtMoney(r.capital, true)}` +
+      `✅ داشبورد به‌روز شد${!fresh.fund && plChanged ? " (پاسخ تازه در فرم پُرس‌لاین)" : ""}\nتاریخ گزارش: ${D.fmtDate(r.asOf)}\nدارایی کل: ${D.fmtMoney(r.capital, true)}` + gLine +
       (!fresh.fund && plChanged ? reqCount : "") +
       (r.wait ? "" : "\n(فایل درخواست‌ها نبود؛ بخش زمان انتظار ساخته نشد)") +
       (warns.length ? "\n\nهشدارها:\n" + warns.map((c) => "• " + c.text).join("\n") : "") +
@@ -625,8 +629,10 @@ async function main() {
   }
   await sendReviews(r);
   writeState(state);
-  if (sendG) await sendGuarantors(r);
-  if (r.guarantors) await updatePorsline(r, !loud);
+  // اول فرم پُرس‌لاین به‌روز می‌شود تا وضعیتش در خلاصه‌ی گزارش ضامن‌ها بیاید
+  const plStatus = r.guarantors ? await updatePorsline(r, !loud) : null;
+  if (sendG) await sendGuarantors(r, plStatus && plStatus.text);
+  else if (plStatus && (plStatus.changed || plStatus.error)) await notify(`👥 ${plStatus.text}`);
 }
 
 main().catch(async (e) => {
