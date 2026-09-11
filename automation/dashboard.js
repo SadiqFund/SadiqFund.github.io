@@ -303,8 +303,16 @@ function loadNameFixes(text) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
     if (line.includes("|")) {
-      const [name, code, ...mobiles] = line.split("|").map((x) => x.trim());
-      if (name) { CONFIG.roster.push({ name, code: latinDigits(code || ""), mobiles: mobiles.filter(Boolean) }); roster++; }
+      const [name, code0, ...mobiles] = line.split("|").map((x) => x.trim());
+      if (!name) continue;
+      const code = latinDigits(code0 || "").replace(/\D/g, "");
+      // همان نفر (نام یکسان و سال ورود یکسان یا خالی) ← شماره‌ها به همان ردیف اضافه می‌شوند؛ مثلاً شماره‌ی دومی که دستی اضافه شده
+      const same = CONFIG.roster.filter((e) => norm(e.name) === norm(name) && (!code || !e.code || e.code === code));
+      if (same.length === 1) {
+        same[0].mobiles = [...new Set([...same[0].mobiles, ...mobiles.filter(Boolean)])];
+        if (!same[0].code) same[0].code = code;
+      } else CONFIG.roster.push({ name, code, mobiles: mobiles.filter(Boolean) });
+      roster++;
     } else if (line.includes(":")) {
       const i = line.indexOf(":"), from = line.slice(0, i).trim(), to = line.slice(i + 1).trim();
       if (from && to) { CONFIG.nameFixes[from] = to; fixes++; }
@@ -345,6 +353,15 @@ function nameFixMap(rows, notes) {
   if (skipped.length) notes.push({ level: "warn", text: `این اصلاح نام‌ها انجام نشد، چون نام درست با عضو دیگری یکی می‌شد (اگر هم‌نام‌اند، اصلاح دستی را بردارید تا سال ورود از فهرست اعضا کنارش بیاید): ${skipped.join("، ")}` });
   const map = new Map();
   prop.forEach((p) => { if (p.changed) map.set(p.k, p.to); });
+  // ردیف‌هایی از فهرست که به هیچ عضوی وصل نشدند ولی نامشان با نام (قدیم یا درست) عضوی یکی است ← شماره‌هایشان مال همان عضو است
+  const used = new Set(rows.map((r) => r._roster).filter(Boolean));
+  const extra = new Map();
+  for (const e of roster) if (!used.has(e)) extra.set(e.key, [...(extra.get(e.key) || []), ...e.mobiles]);
+  rows.forEach((r, i) => {
+    const p = prop.find((x) => x.k === norm(r.name));
+    const more = [...(extra.get(norm(r.name)) || []), ...(p ? extra.get(norm(p.to)) || [] : [])];
+    if (more.length) r._extraMobiles = more;
+  });
   // جست‌وجو در فهرست اعضا برای کسانی که حساب صندوق ندارند (کارت بررسی)
   const find = (mobile, nameKey) => (mobile && rByMobile.get(mobile)) || (nameKey && rByName.get(nameKey)) || null;
   return { map, find };
@@ -380,7 +397,7 @@ function parseWorkbook(wb) {
   for (const r of rows) {
     if (fundNames.includes(norm(r.name))) continue;
     const key = norm(r.name);
-    const mobiles = [normMobile(r.mobile), ...((r._roster && r._roster.mobiles) || [])].filter(Boolean); // موبایل‌های دیگر از فهرست اعضا
+    const mobiles = [normMobile(r.mobile), ...((r._roster && r._roster.mobiles) || []), ...(r._extraMobiles || [])].filter(Boolean); // موبایل‌های دیگر از فهرست اعضا
     const p = personBy.get(key);
     if (p) { p.capital += toNum(r.capital) || 0; p.mobiles = [...new Set([...p.mobiles, ...mobiles])]; if (!p.mobile) p.mobile = normMobile(r.mobile); p.accounts++; continue; }
     personBy.set(key, {

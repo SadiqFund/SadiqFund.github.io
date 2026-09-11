@@ -89,7 +89,10 @@ async function sendGuarantors(r) {
   // ۱. خلاصه
   const gaps = [];
   if (g.noReq) gaps.push(`• ${n(g.noReq)} وام در جریان درخواستی در فرم ندارند؛ ضامنشان معلوم نیست.`);
-  if (g.unknownG) gaps.push(`• ضامنِ ${n(g.unknownG)} وام در جریان با هیچ عضوی جور نشد (جزئیات در پیام‌های بعد).`);
+  const uList = g.unknownGList || [];
+  const dormant = uList.filter((u) => u.roster), unknown = uList.filter((u) => !u.roster);
+  if (dormant.length) gaps.push(`• ضامنِ ${n(dormant.length)} وام در جریان عضو راکد است و دیگر حساب صندوق ندارد.`);
+  if (unknown.length) gaps.push(`• ضامنِ ${n(unknown.length)} وام در جریان ناشناس است.`);
   await notify(
     `👥 گزارش ضامن‌ها، اکسل ${D.fmtDate(r.asOf)}\n\n` +
     `✅ مجاز: ${n(g.eligible.length)} نفر\n` +
@@ -120,12 +123,15 @@ async function sendGuarantors(r) {
       [...x.people].sort((p, q) => (order[x.key] ? order[x.key](p) - order[x.key](q) : 0)).map((a) => { const d = detail[x.key] ? detail[x.key](a) : ""; return `• ${a.name}${d ? `: ${d}` : ""}`; }).join("\n")));
   }
 
-  // ۳. ضامن‌های جور نشده
-  if (g.unknownGList && g.unknownGList.length) {
-    await sendBlocks([`⚠️ ضامن‌هایی که با هیچ عضوی جور نشدند (${n(g.unknownGList.length)} وام)\n` +
-      g.unknownGList.map((u) => `• وام ${u.borrower}: ضامن ${u.roster ? `${u.roster} (در فهرست اعضا هست ولی حساب صندوق ندارد)` : u.typed ? `«${u.typed}»` : "خالی"}`).join("\n") +
-      "\n\nاگر شماره مال یکی از اعضاست، آن را به‌عنوان «شماره ۲» در فایل اطلاعات اعضا بگذارید و متن NAME_FIXES را دوباره بسازید؛ اگر نام غلط است، یک خط اصلاح دستی اضافه کنید."]);
-  }
+  // ۳. وام‌هایی که ضامنشان عضو فعال نیست
+  const uBlocks = [];
+  if (dormant.length) uBlocks.push(`ℹ️ ضامن عضو راکد (${n(dormant.length)} وام)\n` +
+    dormant.map((u) => `• وام ${u.borrower}: ضامن ${u.roster}`).join("\n") +
+    "\nاین ضامن‌ها حسابشان از صندوق بسته شده؛ اگر لازم است، از گیرنده‌ی وام ضامن تازه بخواهید.");
+  if (unknown.length) uBlocks.push(`⚠️ ضامن ناشناس (${n(unknown.length)} وام)\n` +
+    unknown.map((u) => `• وام ${u.borrower}: ضامن ${u.typed ? `«${u.typed}»` : "خالی"}`).join("\n") +
+    "\nاگر صاحب شماره را می‌شناسید، در سازنده‌ی NAME_FIXES در کادر دستی یک خط «نام | سال ورود | شماره» اضافه کنید و Secret را دوباره بسازید.");
+  if (uBlocks.length) await sendBlocks(uBlocks);
 
   // ۴. فهرست مجاز
   const names = [...new Set(g.eligible.map((e) => e.name))];
