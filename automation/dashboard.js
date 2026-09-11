@@ -271,7 +271,12 @@ const CONFIG = {
   // شرط‌های ضامن مجاز (فهرست با هر اکسل تازه برای مدیر صندوق فرستاده می‌شود؛ در داشبورد عمومی نمی‌آید)
   guarantor: {
     maxLateInstallments: 0, // اگر روی وام‌های خودش بیش از این تعداد قسط معوق داشته باشد، ضامن نمی‌شود
-    minCapital: 5000000, // حداقل سرمایه‌ی شخصی (تومان)
+    lateDaysLimit: 30, lateLookbackMonths: 12, // در این چند ماه هیچ قسطی بیش از این چند روز دیر پرداخت نشده باشد
+    inactiveMonths: 3, // در این چند ماه دست‌کم یک تراکنش (حق عضویت، قسط، واریز، …) داشته باشد
+    minTenureMonths: 6, // دست‌کم این چند ماه از اولین تراکنشش گذشته باشد
+    noWithdrawMonths: 12, // در این چند ماه «برداشت متفرقه» نداشته باشد
+    minCapital: 10000000, // حداقل سرمایه‌ی شخصی (تومان)
+    maxOwnDebtRatio: 2, // مانده‌ی وام‌های در جریان خودش بیش از این چند برابر سرمایه‌اش نباشد
     maxActiveGuarantees: 2, // حداکثر ضمانت وام‌های در جریان
   },
   chartRanges: [6, 12, 24], // دکمه‌های بازه‌ی نمودارهای ماهانه
@@ -309,7 +314,7 @@ function parseWorkbook(wb) {
       if (norm(r.date) !== norm("مجموع") && (r.type || r.manager || r.online)) skipped++;
       return;
     }
-    tx.push({ jdn, t: timeOf(r.date), type: norm(r.type), amount: (toNum(r.manager) || 0) + (toNum(r.online) || 0) });
+    tx.push({ jdn, t: timeOf(r.date), who: norm(r.who), type: norm(r.type), amount: (toNum(r.manager) || 0) + (toNum(r.online) || 0) });
   });
   if (skipped) notes.push({ level: "warn", text: `${skipped} ردیف از شیت تراکنش‌ها تاریخ قابل‌خواندن نداشت و کنار گذاشته شد.` });
   tx.sort((a, b) => a.jdn - b.jdn || a.t - b.t);
@@ -602,17 +607,65 @@ function compute(data, req) {
         if (!g) { unknownG++; continue; }
         load.set(g, (load.get(g) || 0) + 1);
       }
-      const eligible = [], out = { late: [], capital: [], cap: [] };
+      const ago = (months) => { const d = J.d2j(asOf); return J.addMonths(d.jy, d.jm, d.jd, -months); };
+      const txBy = new Map();
+      for (const t of tx) { if (!txBy.has(t.who)) txBy.set(t.who, []); txBy.get(t.who).push(t); }
+      const activeBy = new Map();
+      for (const l of active) activeBy.set(l.who, (activeBy.get(l.who) || 0) + l.remaining);
+      // بیشترین تأخیر قسط‌های سررسیدشده در بازه‌ی اخیر: برنامه‌ی قسط‌ها (ماهانه، از یک ماه پس از وام) در برابر بازپرداخت‌های تجمعی
+      const lookback = ago(G.lateLookbackMonths);
+      const maxDelay = (who) => {
+        const sched = [];
+        for (const l of loans) {
+          if (l.who !== who) continue;
+          const d = J.d2j(l.jdn), per = l.gross / l.count;
+          for (let k = 1; k <= l.count; k++) sched.push({ due: J.addMonths(d.jy, d.jm, d.jd, k), a: per });
+        }
+        if (!sched.length) return 0;
+        sched.sort((a, b) => a.due - b.due);
+        const rep = (txBy.get(who) || []).filter((t) => T[t.type] === "repay");
+        let cumDue = 0, cumPaid = 0, j = 0, worst = 0;
+        for (const s of sched) {
+          if (s.due >= asOf) break;
+          cumDue += s.a;
+          const need = cumDue - s.a * 0.05; // تا ۵٪ اختلاف گرد کردن نادیده
+          while (cumPaid < need && j < rep.length) cumPaid += Math.abs(rep[j++].amount);
+          const paidAt = cumPaid >= need ? rep[j - 1].jdn : asOf;
+          if (s.due > lookback) worst = Math.max(worst, paidAt - s.due);
+        }
+        return worst;
+      };
+      const reasons = [
+        { key: "late", label: G.maxLateInstallments ? `بیش از ${fmtInt(G.maxLateInstallments)} قسط معوق` : "قسط معوق دارد", rule: G.maxLateInstallments ? `حداکثر ${fmtInt(G.maxLateInstallments)} قسط معوق` : "هیچ قسط معوق نداشته باشد" },
+        { key: "history", label: `قسطی بیش از ${fmtInt(G.lateDaysLimit)} روز دیر در ${fmtInt(G.lateLookbackMonths)} ماه اخیر`, rule: `در ${fmtInt(G.lateLookbackMonths)} ماه اخیر هیچ قسطی را بیش از ${fmtInt(G.lateDaysLimit)} روز دیر نداده باشد` },
+        { key: "inactive", label: `بدون تراکنش در ${fmtInt(G.inactiveMonths)} ماه اخیر`, rule: `در ${fmtInt(G.inactiveMonths)} ماه اخیر دست‌کم یک تراکنش داشته باشد` },
+        { key: "tenure", label: `کمتر از ${fmtInt(G.minTenureMonths)} ماه عضویت`, rule: `دست‌کم ${fmtInt(G.minTenureMonths)} ماه عضو باشد` },
+        { key: "withdraw", label: `برداشت از سرمایه در ${fmtInt(G.noWithdrawMonths)} ماه اخیر`, rule: `در ${fmtInt(G.noWithdrawMonths)} ماه اخیر از سرمایه‌اش برداشت نکرده باشد` },
+        { key: "capital", label: `سرمایه‌ی کمتر از ${fmtMoney(G.minCapital, true)}`, rule: `سرمایه‌ی شخصی دست‌کم ${fmtMoney(G.minCapital, true)}` },
+        { key: "debt", label: `مانده‌ی وام خودش بیش از ${fmtInt(G.maxOwnDebtRatio)} برابر سرمایه`, rule: `مانده‌ی وام‌های خودش حداکثر ${fmtInt(G.maxOwnDebtRatio)} برابر سرمایه‌اش` },
+        { key: "cap", label: `به سقف ${fmtInt(G.maxActiveGuarantees)} ضمانت رسیده`, rule: `کمتر از ${fmtInt(G.maxActiveGuarantees)} ضمانت وام در جریان` },
+      ];
+      const eligible = [], out = Object.fromEntries(reasons.map((x) => [x.key, []]));
       for (const p of data.people) {
         const late = lateBy.get(p.name) || 0, n = load.get(p.name) || 0;
-        if (late > G.maxLateInstallments) out.late.push(p.nameRaw);
-        else if (p.capital < G.minCapital) out.capital.push(p.nameRaw);
-        else if (n >= G.maxActiveGuarantees) out.cap.push(p.nameRaw);
+        const mine = (txBy.get(p.name) || []).filter((t) => T[t.type] !== "loan" && T[t.type] !== "settle");
+        const first = (txBy.get(p.name) || [])[0];
+        const why =
+          late > G.maxLateInstallments ? "late"
+          : maxDelay(p.name) > G.lateDaysLimit ? "history"
+          : !mine.some((t) => t.jdn > ago(G.inactiveMonths)) ? "inactive"
+          : !first || first.jdn > ago(G.minTenureMonths) ? "tenure"
+          : mine.some((t) => T[t.type] === "withdraw" && t.jdn > ago(G.noWithdrawMonths)) ? "withdraw"
+          : p.capital < G.minCapital ? "capital"
+          : (activeBy.get(p.name) || 0) > G.maxOwnDebtRatio * Math.max(p.capital, 0) ? "debt"
+          : n >= G.maxActiveGuarantees ? "cap"
+          : null;
+        if (why) out[why].push(p.nameRaw);
         else eligible.push({ name: p.nameRaw, free: G.maxActiveGuarantees - n });
       }
       const fa = (a, b) => a.localeCompare(b, "fa");
       eligible.sort((a, b) => fa(a.name, b.name));
-      guarantors = { eligible, out, noReq, unknownG, activeN: active.length };
+      guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key] })), noReq, unknownG, activeN: active.length };
     }
   } else {
     checks.push({ level: "warn", text: "فایل درخواست‌ها داده نشده؛ بخش «انتظار برای وام» در داشبورد نمی‌آید." });

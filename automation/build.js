@@ -65,14 +65,15 @@ async function download(fileId) {
 async function sendGuarantors(r) {
   const g = r.guarantors;
   if (!g || !NOTIFY_ID) return;
-  const G = D.CONFIG.guarantor;
   const n = (x) => D.fmtInt(x);
   const list = (arr) => (arr.length ? arr.join("، ") : "—");
+  const rs = g.reasons || [];
   await notify(
     `👥 ضامن‌های مجاز بر اساس اکسل ${D.fmtDate(r.asOf)}\n` +
-    `شرط‌ها: ${G.maxLateInstallments ? `حداکثر ${n(G.maxLateInstallments)} قسط معوق` : "بدون هیچ قسط معوق"}، سرمایه‌ی شخصی دست‌کم ${D.fmtMoney(G.minCapital, true)}، کمتر از ${n(G.maxActiveGuarantees)} ضمانت وام در جریان.\n\n` +
+    `شرط‌ها:\n${rs.map((x) => "• " + x.rule).join("\n")}\n\n` +
     `✅ مجاز: ${n(g.eligible.length)} نفر (فهرست در پیام بعد)\n\n` +
-    `خارج از فهرست:\n• قسط معوق (${n(g.out.late.length)}): ${list(g.out.late)}\n• سرمایه‌ی کمتر از حد (${n(g.out.capital.length)}): ${list(g.out.capital)}\n• به سقف ضمانت رسیده (${n(g.out.cap.length)}): ${list(g.out.cap)}` +
+    `خارج از فهرست (هر نفر فقط با اولین دلیل):\n` +
+    rs.filter((x) => x.names.length).map((x) => `• ${x.label} (${n(x.names.length)}): ${list(x.names)}`).join("\n") +
     (g.noReq ? `\n\n⚠️ برای ${n(g.noReq)} وام در جریان درخواستی در فرم پیدا نشد، پس ضامنشان معلوم نیست و در شمارش سقف ضمانت نیامده‌اند.` : "") +
     (g.unknownG ? `\n⚠️ ضامنِ ${n(g.unknownG)} وام در جریان با هیچ عضوی جور نشد (نه از روی موبایل، نه نام).` : "")
   );
