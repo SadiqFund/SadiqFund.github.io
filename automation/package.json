@@ -1,0 +1,10 @@
+{
+  "name": "fund-dashboard-automation",
+  "private": true,
+  "description": "ساخت خودکار داشبورد صندوق از اکسل‌های کانال تلگرام",
+  "scripts": { "build": "node build.js" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "xlsx": "0.18.5"
+  }
+}
