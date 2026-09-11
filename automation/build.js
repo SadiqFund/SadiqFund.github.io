@@ -34,6 +34,8 @@ const PL_API = (process.env.PORSLINE_API_BASE || "https://survey.porsline.ir").r
 // خواندن مستقیم پاسخ‌های فرم از پُرس‌لاین؛ با همان کلید و شناسه روشن است (PORSLINE_READ_RESPONSES=false خاموشش می‌کند)
 const PL_READ = !!(PL_KEY && PL_SURVEY) && process.env.PORSLINE_READ_RESPONSES !== "false";
 const PL_WAIT_MS = Number(process.env.PORSLINE_EXPORT_WAIT_MS || 4000); // فاصله‌ی تلاش‌ها تا آماده شدن فایل خروجی
+// هر چند ساعت یک بار پاسخ‌های فرم خوانده شود. با هر اکسل تازه‌ی صندوق یا اجرای دستی هم خوانده می‌شود.
+const PL_EVERY_H = Number(process.env.PORSLINE_CHECK_HOURS || 48);
 const crypto = require("crypto");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // اثر انگشت کوتاه (برگشت‌ناپذیر) برای فهمیدن تغییر؛ خود داده هیچ‌جا ذخیره نمی‌شود
@@ -351,7 +353,9 @@ async function main() {
 
   // ---------- ۳. پاسخ‌های فرم درخواست وام، مستقیم از پُرس‌لاین
   let api = null, apiErr = null, plChanged = false;
-  if (PL_READ) {
+  const plDue = FORCE || !!fresh.fund || !state.plCheckedAt || Date.now() - Date.parse(state.plCheckedAt) >= PL_EVERY_H * 3600e3 - 10 * 60e3;
+  if (PL_READ && !plDue) log("porsline: not due yet.");
+  if (PL_READ && plDue) {
     try {
       let cnt = null;
       try { cnt = await plCount(); } catch (e) { cnt = null; } // اگر این یکی نشد، مستقیم کل پاسخ‌ها را می‌گیریم
@@ -379,6 +383,7 @@ async function main() {
         state.plHash = hash; // فقط اثر انگشت؛ هیچ نام یا شماره‌ای ذخیره نمی‌شود
       }
       if (cnt) state.plCount = cnt.count;
+      state.plCheckedAt = new Date().toISOString(); // اگر خطا بدهد ثبت نمی‌شود تا اجرای بعدی دوباره امتحان شود
       if (state.plFail) { delete state.plFail; await notify("✅ خواندن پاسخ‌های فرم از پُرس‌لاین دوباره برقرار شد."); }
       log(`porsline: responses ${needAll ? (plChanged ? "changed" : "unchanged") : "count unchanged"}.`);
     } catch (e) {
