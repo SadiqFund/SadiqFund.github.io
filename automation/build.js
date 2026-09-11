@@ -43,13 +43,9 @@ const fingerprint = (lines) => crypto.createHash("sha256").update([...lines].sor
 
 const log = (msg) => console.log(`[dashboard] ${msg}`); // فقط پیام کلی، هرگز داده
 
-// اصلاح نام‌های اکسل صندوق از Secret با نام NAME_FIXES؛ هر خط: «نام در اکسل : نام درست»
-for (const line of (process.env.NAME_FIXES || "").split(/\r?\n/)) {
-  const i = line.indexOf(":");
-  if (i === -1) continue;
-  const from = line.slice(0, i).trim(), to = line.slice(i + 1).trim();
-  if (from && to) D.CONFIG.nameFixes[from] = to;
-}
+// نام درست اعضا از Secret با نام NAME_FIXES: خط‌های «نام در اکسل : نام درست» و «نام | سال ورود | موبایل | موبایل ۲»
+const NAMES = D.loadNameFixes(process.env.NAME_FIXES || "");
+if (NAMES.fixes || NAMES.roster) log(`name fixes loaded (${NAMES.fixes} manual, ${NAMES.roster} roster lines).`);
 
 async function tg(method, params) {
   const res = await fetch(`${API}/bot${TOKEN}/${method}`, {
@@ -297,7 +293,10 @@ function reviewCard(r, x) {
   const who = R.resolve(x.mobile, x.name);
   const a = who ? R.assess(who) : null;
   const lines = [`📝 درخواست وام تازه، ثبت ${D.fmtDate(x.jdn)}`];
-  lines.push(`متقاضی: ${a ? a.name : `${x.nameRaw || "(بی‌نام)"} ⚠️ با هیچ عضوی جور نشد (نه موبایل، نه نام)`}`);
+  const rf = !a && R.rosterFind ? R.rosterFind(x.mobile, x.name) : null;
+  lines.push(`متقاضی: ${a ? a.name
+    : rf ? `${rf.name} ⚠️ حساب فعالی در صندوق ندارد (در فهرست اعضا هست${rf.code ? `، ورودی ${D.fmtNum(rf.code)}` : ""})`
+    : `${x.nameRaw || "(بی‌نام)"} ⚠️ با هیچ عضوی جور نشد (نه موبایل، نه نام)`}`);
   const amt = x.amount > 0 ? D.fmtMoney(x.amount, true) : x.amountRaw || "";
   if (amt || x.count) lines.push(`درخواست: ${amt || "مبلغ نامعلوم"}${x.count ? ` در ${D.fmtInt(x.count)} قسط` : ""}` +
     (a && x.amount > 0 && a.capital > 0 ? ` (${dec(x.amount / a.capital)} برابر سرمایه‌اش)` : ""));
@@ -316,7 +315,8 @@ function reviewCard(r, x) {
     const g = R.resolve(x.gMobile, x.gName);
     const ga = g ? R.assess(g) : null;
     lines.push("", "ضامن: " + (!x.gName && !x.gMobile ? "⚠️ وارد نشده"
-      : !ga ? `${x.gNameRaw || "(بی‌نام)"} ⚠️ با هیچ عضوی جور نشد`
+      : !ga ? (() => { const gf = R.rosterFind ? R.rosterFind(x.gMobile, x.gName) : null;
+          return gf ? `${gf.name} ⛔ حساب فعالی در صندوق ندارد` : `${x.gNameRaw || "(بی‌نام)"} ⚠️ با هیچ عضوی جور نشد`; })()
       : g === who ? `${ga.name} ⛔ خود متقاضی است`
       : `${ga.name} ${ga.why ? `⛔ ${ga.whyLabel}` : "✅ مجاز"}${ga.guarantees ? ` (الان ضامن ${D.fmtInt(ga.guarantees)} وام در جریان)` : ""}`));
   }

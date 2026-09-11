@@ -282,24 +282,69 @@ const CONFIG = {
   // اصلاح نام‌های اکسل صندوق: { "نام در اکسل": "نام درست" }. در مخزن عمومی خالی می‌ماند؛
   // خودکارساز آن را از Secret با نام NAME_FIXES پر می‌کند (نام‌ها نباید در کد عمومی بیایند).
   nameFixes: {},
+  roster: [],
   chartRanges: [6, 12, 24], // دکمه‌های بازه‌ی نمودارهای ماهانه
   chartDefault: 6,
   growthStart: "1403/01/01", // نقطه‌ی شروع نمودار رشد دارایی
 };
 
-// اصلاح نام‌ها (CONFIG.nameFixes). اگر نام درست از قبل مال عضو دیگری باشد، اصلاح انجام نمی‌شود
-// تا حساب دو نفر هم‌نام یکی نشود.
-function nameFixMap(memberNames, notes) {
-  const have = new Set(memberNames.map(norm));
-  const map = new Map(), skipped = [];
-  for (const [from, to] of Object.entries(CONFIG.nameFixes || {})) {
-    const f = norm(from), t = norm(to);
-    if (!f || !t || f === t) continue;
-    if (have.has(t)) { skipped.push(`«${from}» ← «${to}»`); continue; }
-    map.set(f, String(to).trim());
+// ---------------------------------------------------------------------------- نام درست اعضا
+// دو منبع، هر دو از Secret با نام NAME_FIXES (در کد عمومی خالی می‌مانند):
+//   - CONFIG.nameFixes: اصلاح دستی { "نام در اکسل": "نام درست" }  ← خط‌های «قدیمی : درست»
+//   - CONFIG.roster: فهرست اعضا [{ name, code (سال ورود), mobiles }] ← خط‌های «نام | کد | موبایل | موبایل ۲»
+// نام درست هر عضو اکسل: اصلاح دستی، وگرنه نام فهرست اعضا (از روی موبایل، یا نام + پسوند سال ورود).
+// اگر دو عضو به یک نام برسند، سال ورود در پرانتز می‌آید؛ اگر سال ورود معلوم نبود، اصلاح انجام نمی‌شود.
+function loadNameFixes(text) {
+  let fixes = 0, roster = 0;
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.includes("|")) {
+      const [name, code, ...mobiles] = line.split("|").map((x) => x.trim());
+      if (name) { CONFIG.roster.push({ name, code: latinDigits(code || ""), mobiles: mobiles.filter(Boolean) }); roster++; }
+    } else if (line.includes(":")) {
+      const i = line.indexOf(":"), from = line.slice(0, i).trim(), to = line.slice(i + 1).trim();
+      if (from && to) { CONFIG.nameFixes[from] = to; fixes++; }
+    }
   }
-  if (skipped.length) notes.push({ level: "warn", text: `این اصلاح نام‌ها انجام نشد، چون نام درست از قبل مال عضو دیگری است (شاید دو نفر هم‌نام‌اند): ${skipped.join("، ")}` });
-  return map;
+  return { fixes, roster };
+}
+
+function nameFixMap(rows, notes) {
+  const roster = (CONFIG.roster || []).map((e) => ({ ...e, key: norm(e.name), mobiles: (e.mobiles || []).map(normMobile).filter(Boolean) }));
+  const rByMobile = new Map(), rByNameCode = new Map(), rByName = new Map();
+  for (const e of roster) {
+    e.mobiles.forEach((m) => { if (!rByMobile.has(m)) rByMobile.set(m, e); });
+    rByNameCode.set(e.key + "|" + e.code, e);
+    rByName.set(e.key, rByName.has(e.key) ? null : e); // نام تکراری در فهرست ← با نام تنها پیدا نمی‌شود
+  }
+  const manual = new Map(Object.entries(CONFIG.nameFixes || {}).map(([f, t]) => [norm(f), String(t).trim()]));
+  const prop = rows.filter((r) => r.name != null && String(r.name).trim()).map((r) => {
+    const raw = String(r.name).trim(), k = norm(raw);
+    const suffix = raw.match(/^(.*?)[\s\-_]*([0-9۰-۹]{2,4})$/);
+    const e = rByMobile.get(normMobile(r.mobile)) || (suffix && rByNameCode.get(norm(suffix[1]) + "|" + latinDigits(suffix[2]))) || rByName.get(k) || null;
+    r._roster = e;
+    const to = manual.has(k) ? manual.get(k) : e ? e.name.trim() : raw;
+    return { raw, k, to, code: e && e.code, manual: manual.has(k), changed: norm(to) !== k };
+  });
+  const skipped = [];
+  // دو ردیف با نام کاملاً یکسان در اکسل را نمی‌شود جدا کرد (تراکنش‌ها با نام وصل‌اند)؛ دست نمی‌زنیم
+  const sameRaw = new Map(); prop.forEach((p) => sameRaw.set(p.k, (sameRaw.get(p.k) || 0) + 1));
+  prop.forEach((p) => { if (sameRaw.get(p.k) > 1) { p.to = p.raw; p.changed = false; } });
+  const dupOf = () => { const c = new Map(); prop.forEach((p) => c.set(norm(p.to), (c.get(norm(p.to)) || 0) + 1)); return c; };
+  let c = dupOf();
+  for (const p of prop) if (p.changed && c.get(norm(p.to)) > 1) {
+    if (p.code && !p.manual) p.to = `${p.to} (${fmtNum(p.code)})`; // دو نفر هم‌نام در فهرست اعضا
+    else { skipped.push(`«${p.raw}» ← «${p.to}»`); p.to = p.raw; p.changed = false; }
+  }
+  c = dupOf();
+  for (const p of prop) if (p.changed && c.get(norm(p.to)) > 1) { skipped.push(`«${p.raw}» ← «${p.to}»`); p.to = p.raw; p.changed = false; }
+  if (skipped.length) notes.push({ level: "warn", text: `این اصلاح نام‌ها انجام نشد، چون نام درست با عضو دیگری یکی می‌شد (اگر هم‌نام‌اند، اصلاح دستی را بردارید تا سال ورود از فهرست اعضا کنارش بیاید): ${skipped.join("، ")}` });
+  const map = new Map();
+  prop.forEach((p) => { if (p.changed) map.set(p.k, p.to); });
+  // جست‌وجو در فهرست اعضا برای کسانی که حساب صندوق ندارند (کارت بررسی)
+  const find = (mobile, nameKey) => (mobile && rByMobile.get(mobile)) || (nameKey && rByName.get(nameKey)) || null;
+  return { map, find };
 }
 
 // ---------------------------------------------------------------------------- خواندن اکسل صندوق
@@ -309,7 +354,7 @@ function parseWorkbook(wb) {
   const loansT = readTable(wb, "loans");
   const header = readHeaderValues(members.top);
   const notes = [];
-  const fixMap = nameFixMap(members.body.map((r) => r.name).filter((n) => n != null), notes);
+  const { map: fixMap, find: rosterFind } = nameFixMap(members.body.filter((r) => toNum(r.row) != null), notes);
   const fix = (raw) => (raw != null && fixMap.has(norm(raw)) ? fixMap.get(norm(raw)) : raw);
   members.body.forEach((r) => { r.name = fix(r.name); });
   txT.body.forEach((r) => { r.who = fix(r.who); });
@@ -327,7 +372,11 @@ function parseWorkbook(wb) {
     notes.push({ level: "warn", text: `این نام‌ها در شیت اعضا بیش از یک بار آمده‌اند: ${[...dup].join("، ")}` });
   }
   // اعضای واقعی (بدون حساب‌های صندوق) با موبایل و سرمایه؛ فقط برای تطبیق و فهرست ضامن، هرگز در داشبورد عمومی
-  const people = rows.filter((r) => !fundNames.includes(norm(r.name))).map((r) => ({ name: norm(r.name), nameRaw: String(r.name).trim(), mobile: normMobile(r.mobile), capital: toNum(r.capital) || 0 }));
+  const people = rows.filter((r) => !fundNames.includes(norm(r.name))).map((r) => ({
+    name: norm(r.name), nameRaw: String(r.name).trim(), mobile: normMobile(r.mobile), capital: toNum(r.capital) || 0,
+    mobiles: [...new Set([normMobile(r.mobile), ...((r._roster && r._roster.mobiles) || [])].filter(Boolean))], // موبایل‌های دیگر از فهرست اعضا
+    code: (r._roster && r._roster.code) || "",
+  }));
   if (CONFIG.fundAccounts.length && fundRows.length < CONFIG.fundAccounts.length) {
     const found = fundRows.map((r) => norm(r.name));
     const missing = CONFIG.fundAccounts.filter((n) => !found.includes(norm(n)));
@@ -369,7 +418,7 @@ function parseWorkbook(wb) {
   loans.forEach((l) => names.add(l.who));
 
   const fixKeys = new Map([...fixMap].map(([f, t]) => [f, norm(t)])); // نام قدیمی ← نام درست (هر دو نرمال)
-  return { header, memberCount, personalCapitalSum, names, fixKeys, people, hasMobile: members.found.mobile, tx, loans, notes, hasLoanNames: loansT.found.who };
+  return { header, memberCount, personalCapitalSum, names, fixKeys, rosterFind, people, hasMobile: members.found.mobile, tx, loans, notes, hasLoanNames: loansT.found.who };
 }
 
 // ---------------------------------------------------------------------------- خواندن فایل درخواست‌ها
@@ -565,6 +614,7 @@ function compute(data, req) {
     // هر درخواست ← نام عضو در نرم‌افزار: اول از روی موبایل، اگر نشد از روی نام
     const byMobile = new Map();
     data.people.forEach((p) => { if (p.mobile && !byMobile.has(p.mobile)) byMobile.set(p.mobile, p.name); });
+    data.people.forEach((p) => (p.mobiles || []).forEach((m) => { if (!byMobile.has(m)) byMobile.set(m, p.name); }));
     const byName = (name) => (!name ? null : data.names.has(name) ? name : data.fixKeys && data.fixKeys.has(name) && data.names.has(data.fixKeys.get(name)) ? data.fixKeys.get(name) : null);
     const resolve = (mobile, name) => (mobile && byMobile.get(mobile)) || byName(name);
 
@@ -720,7 +770,7 @@ function compute(data, req) {
         eligible.sort((a, b) => fa(a.name, b.name));
         guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key] })), noReq, unknownG, activeN: active.length };
       }
-      review = { assess, resolve, queue: queueList, list: req.list, waitMedian: wait.median, hasGuarantor: req.hasGuarantor };
+      review = { assess, resolve, rosterFind: data.rosterFind, queue: queueList, list: req.list, waitMedian: wait.median, hasGuarantor: req.hasGuarantor };
     }
   } else {
     checks.push({ level: "warn", text: "فایل درخواست‌ها داده نشده؛ بخش «انتظار برای وام» در داشبورد نمی‌آید." });
@@ -1323,4 +1373,4 @@ window.__D = ${JSON.stringify(D)};
 </html>`;
 }
 
-module.exports = { CONFIG, THEME, parseWorkbook, parseRequests, detectKind, compute, renderReport, fmtDate, fmtNum, fmtInt, fmtMoney, ReportError };
+module.exports = { CONFIG, THEME, parseWorkbook, parseRequests, detectKind, compute, renderReport, loadNameFixes, fmtDate, fmtNum, fmtInt, fmtMoney, ReportError };
