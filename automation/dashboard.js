@@ -369,14 +369,23 @@ function parseWorkbook(wb) {
   if (names.size < rows.length) {
     const seen = new Set(), dup = new Set();
     rows.forEach((r) => { const k = norm(r.name); if (seen.has(k)) dup.add(String(r.name).trim()); seen.add(k); });
-    notes.push({ level: "warn", text: `این نام‌ها در شیت اعضا بیش از یک بار آمده‌اند: ${[...dup].join("، ")}` });
+    notes.push({ level: "warn", text: `این نام‌ها در شیت اعضا بیش از یک بار آمده‌اند و یک نفر حساب شدند (سرمایه‌شان جمع شد): ${[...dup].join("، ")}. اگر دو نفر جدا هستند، در نرم‌افزار نامشان را متمایز کنید.` });
   }
   // اعضای واقعی (بدون حساب‌های صندوق) با موبایل و سرمایه؛ فقط برای تطبیق و فهرست ضامن، هرگز در داشبورد عمومی
-  const people = rows.filter((r) => !fundNames.includes(norm(r.name))).map((r) => ({
-    name: norm(r.name), nameRaw: String(r.name).trim(), mobile: normMobile(r.mobile), capital: toNum(r.capital) || 0,
-    mobiles: [...new Set([normMobile(r.mobile), ...((r._roster && r._roster.mobiles) || [])].filter(Boolean))], // موبایل‌های دیگر از فهرست اعضا
-    code: (r._roster && r._roster.code) || "",
-  }));
+  // اعضا به تفکیک نام؛ چند حساب با نام یکسان یک نفر حساب می‌شوند (تراکنش‌ها و وام‌ها هم با نام وصل‌اند)
+  const personBy = new Map();
+  for (const r of rows) {
+    if (fundNames.includes(norm(r.name))) continue;
+    const key = norm(r.name);
+    const mobiles = [normMobile(r.mobile), ...((r._roster && r._roster.mobiles) || [])].filter(Boolean); // موبایل‌های دیگر از فهرست اعضا
+    const p = personBy.get(key);
+    if (p) { p.capital += toNum(r.capital) || 0; p.mobiles = [...new Set([...p.mobiles, ...mobiles])]; if (!p.mobile) p.mobile = normMobile(r.mobile); p.accounts++; continue; }
+    personBy.set(key, {
+      name: key, nameRaw: String(r.name).replace(/^[\s\u200c\u200e\u200f]+|[\s\u200c\u200e\u200f]+$/g, ""),
+      mobile: normMobile(r.mobile), capital: toNum(r.capital) || 0, mobiles: [...new Set(mobiles)], code: (r._roster && r._roster.code) || "", accounts: 1,
+    });
+  }
+  const people = [...personBy.values()];
   if (CONFIG.fundAccounts.length && fundRows.length < CONFIG.fundAccounts.length) {
     const found = fundRows.map((r) => norm(r.name));
     const missing = CONFIG.fundAccounts.filter((n) => !found.includes(norm(n)));
@@ -683,12 +692,12 @@ function compute(data, req) {
     // --- سنجش اعضا: فهرست ضامن‌های مجاز و کارت بررسی درخواست‌ها (فقط برای مدیر صندوق، هرگز در داشبورد)
     {
       const G = CONFIG.guarantor;
-      const load = new Map(); let unknownG = 0, noReq = 0;
+      const load = new Map(), unknownGNames = []; let unknownG = 0, noReq = 0;
       if (req.hasGuarantor) for (const l of active) {
         const r = reqOfLoan.get(l);
         if (!r) { noReq++; continue; }
         const g = resolve(r.gMobile, r.gName);
-        if (!g) { unknownG++; continue; }
+        if (!g) { unknownG++; unknownGNames.push(r.gNameRaw || r.gMobile || "(خالی)"); continue; }
         load.set(g, (load.get(g) || 0) + 1);
       }
       const ago = (months) => { const d = J.d2j(asOf); return J.addMonths(d.jy, d.jm, d.jd, -months); };
@@ -768,7 +777,7 @@ function compute(data, req) {
         }
         const fa = (a, b) => a.localeCompare(b, "fa");
         eligible.sort((a, b) => fa(a.name, b.name));
-        guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key] })), noReq, unknownG, activeN: active.length };
+        guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key] })), noReq, unknownG, unknownGNames, activeN: active.length };
       }
       review = { assess, resolve, rosterFind: data.rosterFind, queue: queueList, list: req.list, waitMedian: wait.median, hasGuarantor: req.hasGuarantor };
     }

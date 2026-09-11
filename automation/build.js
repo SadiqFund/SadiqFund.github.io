@@ -79,7 +79,7 @@ async function sendGuarantors(r) {
     `خارج از فهرست (هر نفر فقط با اولین دلیل):\n` +
     rs.filter((x) => x.names.length).map((x) => `• ${x.label} (${n(x.names.length)}): ${list(x.names)}`).join("\n") +
     (g.noReq ? `\n\n⚠️ برای ${n(g.noReq)} وام در جریان درخواستی در فرم پیدا نشد، پس ضامنشان معلوم نیست و در شمارش سقف ضمانت نیامده‌اند.` : "") +
-    (g.unknownG ? `\n⚠️ ضامنِ ${n(g.unknownG)} وام در جریان با هیچ عضوی جور نشد (نه از روی موبایل، نه نام).` : "")
+    (g.unknownG ? `\n⚠️ ضامنِ ${n(g.unknownG)} وام در جریان با هیچ عضوی جور نشد (نه از روی موبایل، نه نام). نامی که در فرم نوشته شده: ${[...new Set(g.unknownGNames || [])].join("، ")}` : "")
   );
   // فهرست خالص، هر نام در یک خط؛ اگر طولانی بود، در چند پیام
   const names = [...new Set(g.eligible.map((e) => e.name))]; // نام‌های تکراری (دو حساب هم‌نام) یک بار
@@ -559,7 +559,8 @@ async function main() {
   const reqCount = api ? `\n(اکنون ${D.fmtInt(api.req.list.length)} درخواست در فرم)` : "";
   if (!changed) {
     log("dashboard unchanged.");
-    if (loud || fresh.req) await notify(`ℹ️ ${fresh.fund || fresh.req ? "فایل دریافت شد" : "ساخت دوباره انجام شد"}، ولی داشبورد تغییری نکرد.\nتاریخ گزارش: ${D.fmtDate(r.asOf)}` + (reqNote ? "\n\n⚠️ " + reqNote : ""));
+    if (loud || fresh.req) await notify(`ℹ️ ${fresh.fund || fresh.req ? "فایل دریافت شد" : "ساخت دوباره انجام شد"}، ولی داشبورد تغییری نکرد.\nتاریخ گزارش: ${D.fmtDate(r.asOf)}` +
+      (warns.length ? "\n\nهشدارها:\n" + warns.map((c) => "• " + c.text).join("\n") : ""));
     else await notify(`📝 پاسخ‌های فرم درخواست وام در پُرس‌لاین تغییر کرد؛ داشبورد تغییری نکرد.${reqCount}`);
   } else {
     fs.writeFileSync(OUT_FILE, html);
