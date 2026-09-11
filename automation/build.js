@@ -91,7 +91,7 @@ async function pl(method, pathname, body) {
   });
   const text = await res.text();
   let j = null; try { j = JSON.parse(text); } catch (e) {}
-  if (!res.ok) { const err = new Error(`Porsline ${method} ${res.status}`); err.status = res.status; err.body = j; throw err; }
+  if (!res.ok) { const err = new Error(`Porsline ${method} ${res.status}`); err.status = res.status; err.body = j != null ? j : text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200); throw err; }
   return j;
 }
 
@@ -176,13 +176,92 @@ async function plExport() {
   const e = new Error(`export download ${last}`); e.kind = "download"; throw e;
 }
 
-function plWhy(e) {
-  return e.status === 401 || e.status === 403 ? "کلید API پذیرفته نشد یا اجازه‌ی خواندن پاسخ‌ها را ندارد (شاید این کار اشتراک لازم دارد)."
+// جدول نتایج (JSON)؛ راه دوم وقتی خروجی اکسل پُرس‌لاین خطا بدهد. به همان شکل خروجی اکسل درمی‌آید
+// تا همان خواننده‌ی سازنده استفاده شود.
+const PERSIAN_DT = new Intl.DateTimeFormat("en-u-ca-persian-nu-latn", { timeZone: "Asia/Tehran", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+function toJalaliText(v) {
+  // تاریخ میلادی (مثل 2026-09-10T20:45:10+03:30) ← 1405/06/20-00:15:10 به وقت تهران
+  if (typeof v !== "string" || !/^(19|20)\d{2}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(v)) return v;
+  const d = new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(v) ? v : v.replace(" ", "T") + "+03:30");
+  if (isNaN(d)) return v;
+  const p = Object.fromEntries(PERSIAN_DT.formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.year}/${p.month}/${p.day}-${p.hour}:${p.minute}:${p.second}`;
+}
+const cellText = (c) => c == null ? null
+  : Array.isArray(c) ? c.map(cellText).filter((x) => x != null && x !== "").join("، ")
+  : typeof c === "object" ? cellText(c.name ?? c.title ?? c.value ?? c.text ?? null)
+  : toJalaliText(c);
+
+async function plTable() {
+  let header = null, total = null;
+  const rows = [];
+  for (let page = 1; page <= 50; page++) {
+    const j = await pl("GET", `/api/v2/surveys/${PL_SURVEY}/responses/results-table/?page=${page}&page_size=1000`);
+    if (!header) header = (j.header || []).map((h) => String(cellText(h) ?? ""));
+    total = Number(j.responders_count);
+    let body = Array.isArray(j.body) ? j.body : [];
+    if (body.length && !Array.isArray(body[0]) && (typeof body[0] !== "object" || body[0] === null)) {
+      const flat = body; body = []; // ردیف‌ها پشت سر هم در یک آرایه
+      for (let i = 0; i < flat.length; i += header.length) body.push(flat.slice(i, i + header.length));
+    } else if (body.length && !Array.isArray(body[0])) {
+      body = body.map((o) => { const arr = Object.values(o).find(Array.isArray); return arr || header.map((h, i) => o[h] ?? o[i] ?? null); });
+    }
+    rows.push(...body.map((r) => r.map(cellText)));
+    if (!body.length || (Number.isFinite(total) && rows.length >= total)) break;
+  }
+  // ستون زمان پایان، اگر عنوانش با خروجی اکسل فرق داشت
+  const P = D.CONFIG.sheets.porsline.columns;
+  const nh = header.map((h) => h.replace(/[يى]/g, "ی").replace(/[‌\s]/g, ""));
+  if (!nh.includes(P.date.replace(/\s/g, ""))) {
+    const dateLike = (i) => rows.some((r) => typeof r[i] === "string" && /^1[34]\d{2}\/\d{2}\/\d{2}/.test(r[i]));
+    let i = nh.findIndex((h, k) => /اتمام|پایان|ارسال|ثبت/.test(h) && dateLike(k));
+    if (i === -1) i = nh.findIndex((h, k) => /تاریخ|زمان|date|time|submit/i.test(h) && dateLike(k));
+    if (i !== -1) header[i] = P.date;
+  }
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, D.CONFIG.sheets.porsline.name);
+  wb.plHeader = header; // فقط عنوان سؤال‌ها، برای پیام خطا
+  return wb;
+}
+
+// اول خروجی اکسل، اگر نشد جدول نتایج
+async function plResponses() {
+  const tryOne = async (via, fn) => {
+    const wb = await fn();
+    if (D.detectKind(wb) !== "porsline") {
+      const e = new Error("format"); e.kind = "format"; e.via = via;
+      if (wb.plHeader) e.header = wb.plHeader;
+      throw e;
+    }
+    return { wb, via };
+  };
+  try { return await tryOne("export", plExport); }
+  catch (e1) {
+    e1.via = e1.via || "export";
+    try { const r = await tryOne("table", plTable); r.exportErr = e1; return r; }
+    catch (e2) { e2.via = e2.via || "table"; e2.first = e1; throw e2; }
+  }
+}
+
+const plDetail = (e) => {
+  if (!e) return "";
+  const b = e.body;
+  const msg = b == null ? "" : typeof b === "string" ? b : JSON.stringify(b);
+  return msg ? ` پیام پُرس‌لاین: ${msg.slice(0, 250)}` : "";
+};
+function plWhyOne(e) {
+  const where = e.via === "table" ? "جدول نتایج" : "خروجی اکسل";
+  const why = e.status === 401 || e.status === 403 ? "کلید API پذیرفته نشد یا اجازه‌ی خواندن پاسخ‌ها را ندارد (شاید این کار اشتراک لازم دارد)."
     : e.status === 404 ? "پرسش‌نامه با این شناسه پیدا نشد."
-    : e.kind === "format" ? "فایلی که پُرس‌لاین داد، ستون‌های فرم درخواست وام را نداشت."
+    : e.kind === "format" ? "ستون‌های فرم درخواست وام پیدا نشد." + (e.header ? ` عنوان ستون‌ها: ${e.header.filter(Boolean).join(" | ").slice(0, 700)}` : "")
     : e.kind === "download" ? "فایل خروجی پاسخ‌ها آماده یا دانلود نشد."
-    : e instanceof D.ReportError ? "فایل پاسخ‌ها خوانده نشد: " + e.message
-    : e.status ? `پاسخ پُرس‌لاین: خطای ${e.status}.` : "به پُرس‌لاین وصل نشد.";
+    : e instanceof D.ReportError ? "پاسخ‌ها خوانده نشد: " + e.message
+    : e.status ? `خطای ${e.status}.` : "به پُرس‌لاین وصل نشد.";
+  return `${where}: ${why}${plDetail(e)}`;
+}
+function plWhy(e) {
+  return e.first ? `${plWhyOne(e.first)} / ${plWhyOne(e)}` : plWhyOne(e);
 }
 
 async function notify(text) {
@@ -268,9 +347,18 @@ async function main() {
       }
       const needAll = FORCE || !!fresh.fund || !cnt || cnt.count !== state.plCount || !state.plHash;
       if (needAll) {
-        const wb = await plExport();
-        if (D.detectKind(wb) !== "porsline") { const e = new Error("format"); e.kind = "format"; throw e; }
-        const req = D.parseRequests(wb);
+        const got = await plResponses();
+        const wb = got.wb;
+        let req;
+        try { req = D.parseRequests(wb); } catch (e) { e.via = got.via; if (wb.plHeader) { e.kind = "format"; e.header = wb.plHeader; } throw e; }
+        if (req.badDate && !req.list.length) { const e = new Error("dates"); e.kind = "format"; e.via = got.via; e.header = wb.plHeader; throw e; }
+        // اگر راه خواندن عوض شد (مثلاً خروجی اکسل خطا داد و جدول نتایج جواب داد)، یک بار خبر می‌دهیم
+        if (got.via !== (state.plVia || "export")) {
+          await notify(got.via === "table"
+            ? `ℹ️ خروجی اکسل پُرس‌لاین جواب نداد (${plWhyOne(got.exportErr)})؛ پاسخ‌ها از جدول نتایج خوانده شد: ${D.fmtInt(req.list.length)} درخواست.`
+            : "ℹ️ پاسخ‌ها دوباره از خروجی اکسل پُرس‌لاین خوانده می‌شود.");
+          state.plVia = got.via;
+        }
         const hash = fingerprint(req.list.map((x) => [x.mobile, x.name, x.jdn, x.gMobile, x.gName].join("|")));
         api = { wb, req };
         plChanged = hash !== state.plHash;
