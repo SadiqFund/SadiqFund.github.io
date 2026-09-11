@@ -318,7 +318,7 @@ function reviewCard(r, x) {
       : !ga ? (() => { const gf = R.rosterFind ? R.rosterFind(x.gMobile, x.gName) : null;
           return gf ? `${gf.name} ⛔ حساب فعالی در صندوق ندارد` : `${x.gNameRaw || "(بی‌نام)"} ⚠️ با هیچ عضوی جور نشد`; })()
       : g === who ? `${ga.name} ⛔ خود متقاضی است`
-      : `${ga.name} ${ga.why ? `⛔ ${ga.whyLabel}` : "✅ مجاز"}${ga.guarantees ? ` (الان ضامن ${D.fmtInt(ga.guarantees)} وام در جریان)` : ""}`));
+      : `${ga.name} ${ga.why ? `⛔ ${ga.whyLabel}` : "✅ مجاز"}${ga.guarantees ? ` (الان ضامن ${D.fmtInt(ga.guarantees)} وام در جریان از سقف ${D.fmtInt(ga.maxGuarantees)})` : ""}`));
   }
   // صف
   const i = R.queue.findIndex((q) => q.r === x);

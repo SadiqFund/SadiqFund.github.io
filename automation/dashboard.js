@@ -277,7 +277,10 @@ const CONFIG = {
     noWithdrawMonths: 12, // در این چند ماه «برداشت متفرقه» نداشته باشد
     minCapital: 10000000, // حداقل سرمایه‌ی شخصی (تومان)
     maxOwnDebtRatio: 2, // مانده‌ی وام‌های در جریان خودش بیش از این چند برابر سرمایه‌اش نباشد
-    maxActiveGuarantees: 2, // حداکثر ضمانت وام‌های در جریان
+    maxActiveGuarantees: 2, // حداکثر ضمانت وام‌های در جریان (پایه)
+    // استثنا برای سرمایه‌ی زیاد: به ازای هر «پله» سرمایه بیش از «از»، یک ضمانت بیشتر، تا «سقف»
+    // (۶۰ میلیون ← ۳، ۸۰ میلیون ← ۴، ۱۰۰ میلیون و بیشتر ← ۵)
+    extraGuarantees: { from: 40000000, step: 20000000, max: 5 },
   },
   // اصلاح نام‌های اکسل صندوق: { "نام در اکسل": "نام درست" }. در مخزن عمومی خالی می‌ماند؛
   // خودکارساز آن را از Secret با نام NAME_FIXES پر می‌کند (نام‌ها نباید در کد عمومی بیایند).
@@ -728,6 +731,10 @@ function compute(data, req) {
         }
         return worst;
       };
+      // سقف ضمانت هر نفر: پایه، به‌علاوه‌ی پله‌های سرمایه‌ی زیاد
+      const X = G.extraGuarantees;
+      const capOf = (capital) => !X ? G.maxActiveGuarantees
+        : Math.min(Math.max(X.max, G.maxActiveGuarantees), G.maxActiveGuarantees + Math.max(0, Math.floor((capital - X.from) / X.step)));
       const reasons = [
         { key: "late", label: G.maxLateInstallments ? `بیش از ${fmtInt(G.maxLateInstallments)} قسط معوق` : "قسط معوق دارد", rule: G.maxLateInstallments ? `حداکثر ${fmtInt(G.maxLateInstallments)} قسط معوق` : "هیچ قسط معوق نداشته باشد" },
         { key: "history", label: `قسطی بیش از ${fmtInt(G.lateDaysLimit)} روز دیر در ${fmtInt(G.lateLookbackMonths)} ماه اخیر`, rule: `در ${fmtInt(G.lateLookbackMonths)} ماه اخیر هیچ قسطی را بیش از ${fmtInt(G.lateDaysLimit)} روز دیر نداده باشد` },
@@ -736,7 +743,8 @@ function compute(data, req) {
         { key: "withdraw", label: `برداشت از سرمایه در ${fmtInt(G.noWithdrawMonths)} ماه اخیر`, rule: `در ${fmtInt(G.noWithdrawMonths)} ماه اخیر از سرمایه‌اش برداشت نکرده باشد` },
         { key: "capital", label: `سرمایه‌ی کمتر از ${fmtMoney(G.minCapital, true)}`, rule: `سرمایه‌ی شخصی دست‌کم ${fmtMoney(G.minCapital, true)}` },
         { key: "debt", label: `مانده‌ی وام خودش بیش از ${fmtInt(G.maxOwnDebtRatio)} برابر سرمایه`, rule: `مانده‌ی وام‌های خودش حداکثر ${fmtInt(G.maxOwnDebtRatio)} برابر سرمایه‌اش` },
-        { key: "cap", label: `به سقف ${fmtInt(G.maxActiveGuarantees)} ضمانت رسیده`, rule: `کمتر از ${fmtInt(G.maxActiveGuarantees)} ضمانت وام در جریان` },
+        { key: "cap", label: "به سقف ضمانتش رسیده",
+          rule: `کمتر از ${fmtInt(G.maxActiveGuarantees)} ضمانت وام در جریان` + (X ? `؛ به ازای هر ${fmtMoney(X.step, true)} سرمایه بیش از ${fmtMoney(X.from, true)}، یک ضمانت بیشتر (حداکثر ${fmtInt(X.max)})` : "") },
       ];
       const labelOf = Object.fromEntries(reasons.map((x) => [x.key, x.label]));
       const personBy = new Map(data.people.map((p) => [p.name, p]));
@@ -758,11 +766,11 @@ function compute(data, req) {
           : withdraw ? "withdraw"
           : p.capital < G.minCapital ? "capital"
           : debt > G.maxOwnDebtRatio * Math.max(p.capital, 0) ? "debt"
-          : n >= G.maxActiveGuarantees ? "cap"
+          : n >= capOf(p.capital) ? "cap"
           : null;
         const myLoans = loansBy.get(name) || [];
         return {
-          name: p.nameRaw, capital: p.capital, late, maxDelay: delay, guarantees: n, withdraw,
+          name: p.nameRaw, capital: p.capital, late, maxDelay: delay, guarantees: n, maxGuarantees: capOf(p.capital), withdraw,
           tenureDays: first ? asOf - first.jdn : 0, lastTxDays: lastMine ? asOf - lastMine.jdn : null,
           loansN: myLoans.length, activeDebt: debt, activeLoansN: active.filter((l) => l.who === name).length,
           why, whyLabel: why ? labelOf[why] : null,
@@ -773,7 +781,7 @@ function compute(data, req) {
         for (const p of data.people) {
           const a = assess(p.name);
           if (a.why) out[a.why].push(p.nameRaw);
-          else eligible.push({ name: p.nameRaw, free: G.maxActiveGuarantees - a.guarantees });
+          else eligible.push({ name: p.nameRaw, free: a.maxGuarantees - a.guarantees });
         }
         const fa = (a, b) => a.localeCompare(b, "fa");
         eligible.sort((a, b) => fa(a.name, b.name));
