@@ -46,6 +46,29 @@ async function download(fileId) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+// فهرست ضامن‌های مجاز: یک پیام خلاصه + فهرست خالص نام‌ها برای کپی در گزینه‌های فرم پُرس‌لاین
+async function sendGuarantors(r) {
+  const g = r.guarantors;
+  if (!g || !NOTIFY_ID) return;
+  const G = D.CONFIG.guarantor;
+  const n = (x) => D.fmtInt(x);
+  const list = (arr) => (arr.length ? arr.join("، ") : "—");
+  await notify(
+    `👥 ضامن‌های مجاز بر اساس اکسل ${D.fmtDate(r.asOf)}\n` +
+    `شرط‌ها: ${G.maxLateInstallments ? `حداکثر ${n(G.maxLateInstallments)} قسط معوق` : "بدون هیچ قسط معوق"}، سرمایه‌ی شخصی دست‌کم ${D.fmtMoney(G.minCapital, true)}، کمتر از ${n(G.maxActiveGuarantees)} ضمانت وام در جریان.\n\n` +
+    `✅ مجاز: ${n(g.eligible.length)} نفر (فهرست در پیام بعد)\n\n` +
+    `خارج از فهرست:\n• قسط معوق (${n(g.out.late.length)}): ${list(g.out.late)}\n• سرمایه‌ی کمتر از حد (${n(g.out.capital.length)}): ${list(g.out.capital)}\n• به سقف ضمانت رسیده (${n(g.out.cap.length)}): ${list(g.out.cap)}` +
+    (g.noReq ? `\n\n⚠️ برای ${n(g.noReq)} وام در جریان درخواستی در فرم پیدا نشد، پس ضامنشان معلوم نیست و در شمارش سقف ضمانت نیامده‌اند.` : "") +
+    (g.unknownG ? `\n⚠️ ضامنِ ${n(g.unknownG)} وام در جریان با هیچ عضوی جور نشد (نه از روی موبایل، نه نام).` : "")
+  );
+  // فهرست خالص، هر نام در یک خط؛ اگر طولانی بود، در چند پیام
+  const names = [...new Set(g.eligible.map((e) => e.name))]; // نام‌های تکراری (دو حساب هم‌نام) یک بار
+  let chunk = [];
+  const flush = async () => { if (chunk.length) { await notify(chunk.join("\n")); chunk = []; } };
+  for (const nm of names) { if ((chunk.join("\n") + "\n" + nm).length > 3500) await flush(); chunk.push(nm); }
+  await flush();
+}
+
 async function notify(text) {
   if (!NOTIFY_ID) return;
   const t = text.length > 3900 ? text.slice(0, 3900) + "\n…" : text;
@@ -62,6 +85,10 @@ async function main() {
   state = readState();
 
   // ---------- ۱. پیام‌های تازه
+  const me = await tg("getMe").catch(() => null);
+  if (!me) { log("the bot token was rejected by Telegram — check the TELEGRAM_BOT_TOKEN secret."); throw new Error("bad token"); }
+  const hook = await tg("getWebhookInfo").catch(() => null);
+  if (hook && hook.url) { await tg("deleteWebhook").catch(() => {}); log("a webhook was set on this bot; removed it so updates can be read."); }
   const updates = await tg("getUpdates", { offset: state.offset || 0, timeout: 0, allowed_updates: ["channel_post", "message"] });
   if (updates.length) state.offset = updates[updates.length - 1].update_id + 1;
   log(`${updates.length} new update(s).`);
@@ -70,10 +97,13 @@ async function main() {
   if (!CHAT_ID) {
     const chats = new Map();
     for (const u of updates) { const m = u.channel_post || u.message; if (m && m.chat) chats.set(String(m.chat.id), m.chat); }
+    let okCount = 0;
     for (const [id] of chats) {
-      try { await tg("sendMessage", { chat_id: id, text: `شناسه‌ی این گفت‌وگو برای تنظیم خودکارساز:\n${id}\n\nاین عدد را در گیت‌هاب با نام TELEGRAM_CHAT_ID ذخیره کنید.` }); } catch (e) {}
+      try { await tg("sendMessage", { chat_id: id, text: `شناسه‌ی این گفت‌وگو برای تنظیم خودکارساز:\n${id}\n\nاین عدد را در گیت‌هاب با نام TELEGRAM_CHAT_ID ذخیره کنید.` }); okCount++; }
+      catch (e) { log("discovery: could not post the id — the bot probably lacks the 'Post Messages' admin permission."); }
     }
-    log(`discovery mode: sent chat id to ${chats.size} chat(s).`);
+    if (!chats.size) log("discovery: the bot saw no messages. Make sure the bot is an ADMIN of the channel, post a NEW message in the channel after adding it, then run again.");
+    log(`discovery mode: found ${chats.size} chat(s), posted the id to ${okCount}.`);
     writeState(state);
     return;
   }
@@ -97,7 +127,7 @@ async function main() {
       const wb = XLSX.read(await download(d.file_id), { type: "array" });
       const kind = D.detectKind(wb);
       if (kind === "fund") { if (!fresh.fund || d.date >= fresh.fund.meta.date) fresh.fund = { meta: d, wb }; }
-      else if (kind === "requests") { if (!fresh.req || d.date >= fresh.req.meta.date) fresh.req = { meta: d, wb }; }
+      else if (kind === "requests" || kind === "porsline") { if (!fresh.req || d.date >= fresh.req.meta.date) fresh.req = { meta: d, wb }; }
       else skipped.push(`«${d.name}» نه خروجی نرم‌افزار صندوق است و نه فایل درخواست‌ها؛ نادیده گرفته شد.`);
     } catch (e) {
       skipped.push(`«${d.name}» خوانده نشد.`);
@@ -167,6 +197,7 @@ async function main() {
   if (html === prev) {
     log("dashboard unchanged.");
     await notify(`ℹ️ ${fresh.fund || fresh.req ? "فایل دریافت شد" : "ساخت دوباره انجام شد"}، ولی داشبورد تغییری نکرد.\nتاریخ گزارش: ${D.fmtDate(r.asOf)}`);
+    if (r.guarantors) await sendGuarantors(r);
     return;
   }
   fs.writeFileSync(OUT_FILE, html);
@@ -178,6 +209,7 @@ async function main() {
     (skipped.length ? "\n\n" + skipped.map((x) => "• " + x).join("\n") : "") +
     (SITE_URL ? `\n\nچند دقیقه‌ی دیگر روی لینک دیده می‌شود:\n${SITE_URL}` : "")
   );
+  if (r.guarantors) await sendGuarantors(r);
 }
 
 main().catch(async (e) => {

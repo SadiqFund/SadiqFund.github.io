@@ -204,6 +204,7 @@ const CONFIG = {
     members: {
       name: "اعضا",
       columns: { row: "ردیف", name: "نام و نام خانوادگی", capital: "سرمایه شخصی" },
+      optional: { mobile: "شماره موبایل" }, // برای تطبیق متقاضی و ضامنِ فرم پُرس‌لاین با اعضا
     },
     tx: {
       name: "تراکنش‌ها",
@@ -233,6 +234,13 @@ const CONFIG = {
       columns: { name: "نام متقاضی", date: "تاریخ درخواست" },
       optional: { status: "وضعیت", received: "تاریخ دریافت" },
     },
+    // خروجی پاسخ‌های فرم درخواست وام در پُرس‌لاین (شیت Results). فقط همین ستون‌ها خوانده می‌شوند؛
+    // ستون‌های حساس فرم (کد ملی، کارت، شبا، ایمیل) هرگز خوانده نمی‌شوند.
+    porsline: {
+      name: "Results",
+      columns: { name: "نام و نام خانوادگی", mobile: "شماره تلفن همراه", date: "تاریخ اتمام" },
+      optional: { gName: "نام و نام خانوادگی ضامن:", gMobile: "شماره تلفن همراه ضامن:", amount: "مبلغ وام مورد نیاز (به تومان):", count: "تعداد اقساط پیشنهادی:" },
+    },
   },
   // برچسب‌های بالای شیت اعضا؛ مقدار هر کدام در اولین خانه‌ی پر بعد از برچسب است
   headerLabels: {
@@ -255,7 +263,13 @@ const CONFIG = {
   fundAccounts: ["حساب هیئت‌مدیره"],
   cancelWord: "لغو", // مقدار ستون «وضعیت» برای درخواست لغوشده
   waitMonths: 12, // میانه‌ی زمان انتظار روی وام‌های پرداخت‌شده در این چند ماه اخیر
-  staleQueueDays: 365, // هشدار برای درخواستی که بیش از این تعداد روز در صف مانده
+  requestExpiryMonths: 9, // درخواستی که این مدت به وام نرسد، منقضی حساب می‌شود و در صف نمی‌ماند
+  // شرط‌های ضامن مجاز (فهرست با هر اکسل تازه برای مدیر صندوق فرستاده می‌شود؛ در داشبورد عمومی نمی‌آید)
+  guarantor: {
+    maxLateInstallments: 0, // اگر روی وام‌های خودش بیش از این تعداد قسط معوق داشته باشد، ضامن نمی‌شود
+    minCapital: 5000000, // حداقل سرمایه‌ی شخصی (تومان)
+    maxActiveGuarantees: 2, // حداکثر ضمانت وام‌های در جریان
+  },
   chartRanges: [6, 12, 24], // دکمه‌های بازه‌ی نمودارهای ماهانه
   chartDefault: 6,
   growthStart: "1403/01/01", // نقطه‌ی شروع نمودار رشد دارایی
@@ -275,6 +289,8 @@ function parseWorkbook(wb) {
   const memberCount = rows.length - fundRows.length;
   const personalCapitalSum = rows.reduce((s, r) => s + (toNum(r.capital) || 0), 0);
   const names = new Set(rows.map((r) => norm(r.name)));
+  // اعضای واقعی (بدون حساب‌های صندوق) با موبایل و سرمایه؛ فقط برای تطبیق و فهرست ضامن، هرگز در داشبورد عمومی
+  const people = rows.filter((r) => !fundNames.includes(norm(r.name))).map((r) => ({ name: norm(r.name), nameRaw: String(r.name).trim(), mobile: normMobile(r.mobile), capital: toNum(r.capital) || 0 }));
   if (CONFIG.fundAccounts.length && fundRows.length < CONFIG.fundAccounts.length) {
     const found = fundRows.map((r) => norm(r.name));
     const missing = CONFIG.fundAccounts.filter((n) => !found.includes(norm(n)));
@@ -315,14 +331,36 @@ function parseWorkbook(wb) {
   loans.sort((a, b) => a.jdn - b.jdn);
   loans.forEach((l) => names.add(l.who));
 
-  return { header, memberCount, personalCapitalSum, names, tx, loans, notes, hasLoanNames: loansT.found.who };
+  return { header, memberCount, personalCapitalSum, names, people, hasMobile: members.found.mobile, tx, loans, notes, hasLoanNames: loansT.found.who };
 }
 
 // ---------------------------------------------------------------------------- خواندن فایل درخواست‌ها
+// شماره‌ی موبایل ← ۱۰ رقم آخر (۹۱۲…)؛ برای تطبیق مطمئن‌تر از نام
+function normMobile(v) {
+  const d = latinDigits(v == null ? "" : v).replace(/\D/g, "");
+  return d.length >= 10 ? d.slice(-10) : "";
+}
+
+// دو قالب پذیرفته می‌شود: خروجی پاسخ‌های پُرس‌لاین (پیشنهادی) یا loan-requests.xlsx قدیمی
 function parseRequests(wb) {
-  const t = readTable(wb, "requests");
+  const kind = detectKind(wb);
   const list = [];
   let badDate = 0;
+  if (kind === "porsline") {
+    const t = readTable(wb, "porsline");
+    t.body.forEach((r) => {
+      const nameRaw = String(r.name == null ? "" : r.name).trim();
+      if (!nameRaw && !r.mobile) return; // ردیف خالی
+      const jdn = parseDate(r.date);
+      if (jdn == null) { badDate++; return; }
+      list.push({
+        name: norm(nameRaw), nameRaw, mobile: normMobile(r.mobile), jdn, cancelled: false, received: null,
+        gName: norm(r.gName), gNameRaw: String(r.gName == null ? "" : r.gName).trim(), gMobile: normMobile(r.gMobile),
+      });
+    });
+    return { list, badDate, source: "porsline", hasGuarantor: !!t.found.gName || !!t.found.gMobile };
+  }
+  const t = readTable(wb, "requests");
   t.body.forEach((r) => {
     const nameRaw = String(r.name == null ? "" : r.name).trim();
     if (!nameRaw) return;
@@ -330,9 +368,9 @@ function parseRequests(wb) {
     if (jdn == null) { badDate++; return; }
     const status = norm(r.status);
     const received = parseDate(r.received);
-    list.push({ name: norm(nameRaw), nameRaw, jdn, cancelled: status === norm(CONFIG.cancelWord), received });
+    list.push({ name: norm(nameRaw), nameRaw, mobile: "", jdn, cancelled: status === norm(CONFIG.cancelWord), received, gName: "", gMobile: "" });
   });
-  return { list, badDate };
+  return { list, badDate, source: "manual", hasGuarantor: false };
 }
 
 // تشخیص نوع فایل از روی شیت‌هایش
@@ -341,6 +379,7 @@ function detectKind(wb) {
     try { const s = findSheet(wb, CONFIG.sheets[key]); return locateHeader(s.rows, CONFIG.sheets[key].columns).ok; } catch (e) { return false; }
   };
   if (has("tx")) return "fund";
+  if (has("porsline")) return "porsline";
   if (has("requests")) return "requests";
   return null;
 }
@@ -449,6 +488,7 @@ function compute(data, req) {
   const status = { ahead: 0, ok: 0, late1: 0, late2: 0 };
   const dots = [];
   let dueThisMonth = 0, paidThisMonth = 0;
+  const lateBy = new Map(); // تعداد قسط معوق هر گیرنده، روی وام‌های در جریانش
   for (const l of loans) {
     const d = J.d2j(l.jdn);
     let due = 0;
@@ -459,6 +499,7 @@ function compute(data, req) {
     }
     if (!(l.remaining > 0 && l.paidCount < l.count)) continue;
     const delta = l.paidCount - due;
+    if (delta < 0) lateBy.set(l.who, (lateBy.get(l.who) || 0) - delta);
     const s = delta > 0 ? "ahead" : delta === 0 ? "ok" : delta === -1 ? "late1" : "late2";
     status[s]++;
     dots.push(s);
@@ -468,48 +509,97 @@ function compute(data, req) {
   const monthLoans = loans.filter((l) => l.jdn >= monthStart && l.jdn <= asOf);
 
   // --- زمان انتظار و صف (از فایل درخواست‌ها)
-  let wait = null;
+  let wait = null, guarantors = null;
   if (req && !data.hasLoanNames) {
     checks.push({ level: "error", text: `ستون «${CONFIG.sheets.loans.optional.who}» در شیت وام‌ها پیدا نشد؛ درخواست‌ها به وام‌ها وصل نمی‌شوند و بخش «انتظار برای وام» ساخته نشد.` });
   } else if (req) {
-    const byName = new Map();
-    loans.forEach((l) => { if (!byName.has(l.who)) byName.set(l.who, []); byName.get(l.who).push({ jdn: l.jdn, used: false }); });
+    // هر درخواست ← نام عضو در نرم‌افزار: اول از روی موبایل، اگر نشد از روی نام
+    const byMobile = new Map();
+    data.people.forEach((p) => { if (p.mobile && !byMobile.has(p.mobile)) byMobile.set(p.mobile, p.name); });
+    const resolve = (mobile, name) => (mobile && byMobile.get(mobile)) || (name && data.names.has(name) ? name : null);
+
+    const loansBy = new Map();
+    loans.forEach((l) => { if (!loansBy.has(l.who)) loansBy.set(l.who, []); loansBy.get(l.who).push(l); });
     const since = (() => { const d = J.d2j(asOf); return J.addMonths(d.jy, d.jm, d.jd, -CONFIG.waitMonths); })();
-    const waits = [], queue = [], stale = [], unknownNames = new Set(), manualMiss = [];
-    let future = 0, cancelled = 0;
-    const list = [...req.list].sort((a, b) => a.jdn - b.jdn);
-    for (const r of list) {
+    const expiry = (() => { const d = J.d2j(asOf); return J.addMonths(d.jy, d.jm, d.jd, -CONFIG.requestExpiryMonths); })();
+    const waits = [], unknownNames = new Set(), manualMiss = [];
+    let future = 0, cancelled = 0, queue = 0, expired = 0, superseded = 0;
+    const reqOfLoan = new Map(); // وام ← درخواستی که به آن رسیده (برای پیدا کردن ضامن)
+
+    // درخواست‌ها به تفکیک شخص
+    const reqBy = new Map();
+    for (const r of req.list) {
       if (r.jdn > asOf) { future++; continue; }
       if (r.cancelled) { cancelled++; continue; }
-      if (!data.names.has(r.name)) unknownNames.add(r.nameRaw);
-      const cands = byName.get(r.name) || [];
-      let got = null;
-      if (r.received != null) {
-        got = r.received;
-        const c = cands.find((c) => !c.used && c.jdn === r.received);
-        if (c) c.used = true; else manualMiss.push(r.nameRaw);
-      } else {
-        const c = cands.find((c) => !c.used && c.jdn >= r.jdn);
-        if (c) { c.used = true; got = c.jdn; }
+      const who = resolve(r.mobile, r.name);
+      if (!who) { unknownNames.add(r.nameRaw || r.mobile); continue; }
+      if (r.received != null) { // تاریخ دستی (فقط در فایل قدیمی)
+        const l = (loansBy.get(who) || []).find((x) => x.jdn === r.received);
+        if (l) reqOfLoan.set(l, r); else manualMiss.push(r.nameRaw);
+        if (r.received <= asOf && r.received > since) waits.push(r.received - r.jdn);
+        continue;
       }
-      if (got != null && got <= asOf) {
-        if (got > since) waits.push(got - r.jdn);
-      } else {
-        queue.push(r);
-        if (asOf - r.jdn > CONFIG.staleQueueDays) stale.push(r.nameRaw);
+      if (!reqBy.has(who)) reqBy.set(who, []);
+      reqBy.get(who).push(r);
+    }
+    // برای هر وام: آخرین درخواستِ همان شخص بین وام قبلی‌اش و این وام
+    for (const [who, rs] of reqBy) {
+      rs.sort((a, b) => a.jdn - b.jdn);
+      const ls = (loansBy.get(who) || []).filter((l) => l.jdn <= asOf);
+      let prev = -Infinity;
+      for (const l of ls) {
+        const win = rs.filter((r) => r.jdn > prev && r.jdn <= l.jdn);
+        if (win.length) {
+          const r = win[win.length - 1];
+          superseded += win.length - 1;
+          reqOfLoan.set(l, r);
+          if (l.jdn > since) waits.push(l.jdn - r.jdn);
+        }
+        prev = l.jdn;
+      }
+      const pending = rs.filter((r) => r.jdn > prev);
+      if (pending.length) {
+        superseded += pending.length - 1;
+        if (pending[pending.length - 1].jdn >= expiry) queue++; else expired++;
       }
     }
     wait = {
       n: waits.length,
       median: median(waits), // میانه: نیمی از وام‌ها در همین مدت یا کمتر پرداخت شده‌اند
-      queue: queue.length,
+      queue,
     };
-    checks.push({ level: "ok", text: `فایل درخواست‌ها: ${fmtInt(req.list.length)} درخواست خوانده شد؛ ${fmtInt(waits.length)} وام در ${fmtInt(CONFIG.waitMonths)} ماه اخیر به درخواستش وصل شد، ${fmtInt(queue.length)} درخواست در صف است${cancelled ? ` و ${fmtInt(cancelled)} درخواست لغو شده` : ""}.` });
-    if (req.badDate) checks.push({ level: "warn", text: `${fmtInt(req.badDate)} ردیف از فایل درخواست‌ها تاریخ درخواست قابل‌خواندن نداشت و کنار گذاشته شد.` });
-    if (unknownNames.size) checks.push({ level: "warn", text: `این نام‌ها در فایل درخواست‌ها با هیچ عضوی جور نشد (باید دقیقاً مثل نرم‌افزار نوشته شوند): ${[...unknownNames].join("، ")}` });
+    checks.push({ level: "ok", text: `فایل درخواست‌ها${req.source === "porsline" ? " (پُرس‌لاین)" : ""}: ${fmtInt(req.list.length)} درخواست خوانده شد؛ ${fmtInt(waits.length)} وام در ${fmtInt(CONFIG.waitMonths)} ماه اخیر به درخواستش وصل شد و ${fmtInt(queue)} نفر در صف‌اند.` });
+    if (superseded) checks.push({ level: "ok", text: `${fmtInt(superseded)} درخواست تکراری بود؛ از هر نفر آخرین درخواستش حساب شد.` });
+    if (expired) checks.push({ level: "warn", text: `${fmtInt(expired)} نفر درخواستی دارند که بیش از ${fmtInt(CONFIG.requestExpiryMonths)} ماه به وام نرسیده؛ منقضی حساب شد و در صف نیامد.` });
+    if (req.source === "porsline" && !data.hasMobile) checks.push({ level: "warn", text: "ستون «شماره موبایل» در شیت اعضا پیدا نشد؛ تطبیق فقط از روی نام انجام شد." });
+    if (req.badDate) checks.push({ level: "warn", text: `${fmtInt(req.badDate)} ردیف از فایل درخواست‌ها تاریخ قابل‌خواندن نداشت و کنار گذاشته شد.` });
+    if (unknownNames.size) checks.push({ level: "warn", text: `این متقاضی‌ها با هیچ عضوی جور نشدند (نه از روی موبایل، نه نام): ${[...unknownNames].join("، ")}` });
     if (manualMiss.length) checks.push({ level: "warn", text: `برای این درخواست‌ها «تاریخ دریافت» دستی پر شده ولی وامی با همان تاریخ به همان نام پیدا نشد؛ تاریخ دستی مبنا قرار گرفت: ${manualMiss.join("، ")}` });
-    if (stale.length) checks.push({ level: "warn", text: `این درخواست‌ها بیش از ${fmtInt(CONFIG.staleQueueDays)} روز در صف مانده‌اند؛ اگر لغو شده‌اند، «${CONFIG.cancelWord}» بزنید: ${stale.join("، ")}` });
     if (future) checks.push({ level: "warn", text: `${fmtInt(future)} درخواست تاریخی بعد از تاریخ اکسل صندوق دارد و حساب نشد.` });
+
+    // --- فهرست ضامن‌های مجاز (فقط برای مدیر صندوق)
+    if (req.hasGuarantor) {
+      const G = CONFIG.guarantor;
+      const load = new Map(); let unknownG = 0, noReq = 0;
+      for (const l of active) {
+        const r = reqOfLoan.get(l);
+        if (!r) { noReq++; continue; }
+        const g = resolve(r.gMobile, r.gName);
+        if (!g) { unknownG++; continue; }
+        load.set(g, (load.get(g) || 0) + 1);
+      }
+      const eligible = [], out = { late: [], capital: [], cap: [] };
+      for (const p of data.people) {
+        const late = lateBy.get(p.name) || 0, n = load.get(p.name) || 0;
+        if (late > G.maxLateInstallments) out.late.push(p.nameRaw);
+        else if (p.capital < G.minCapital) out.capital.push(p.nameRaw);
+        else if (n >= G.maxActiveGuarantees) out.cap.push(p.nameRaw);
+        else eligible.push({ name: p.nameRaw, free: G.maxActiveGuarantees - n });
+      }
+      const fa = (a, b) => a.localeCompare(b, "fa");
+      eligible.sort((a, b) => fa(a.name, b.name));
+      guarantors = { eligible, out, noReq, unknownG, activeN: active.length };
+    }
   } else {
     checks.push({ level: "warn", text: "فایل درخواست‌ها داده نشده؛ بخش «انتظار برای وام» در داشبورد نمی‌آید." });
   }
@@ -564,6 +654,7 @@ function compute(data, req) {
       avg12: (() => { const m = months.slice(-CONFIG.waitMonths); return m.length ? m.reduce((s, x) => s + x.loanAmt, 0) / m.length : null; })(),
     },
     wait,
+    guarantors, // فقط برای مدیر صندوق؛ در renderReport استفاده نمی‌شود
     growth: { series, snaps, years, start: fmtMonthYear(g0) },
     months: months.slice(-Math.max(...CONFIG.chartRanges)),
     checks,
