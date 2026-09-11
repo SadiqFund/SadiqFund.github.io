@@ -1,4 +1,4 @@
-// ساخته‌شده از همان کد سازنده‌ی داشبورد (fund-dashboard-builder.html). دستی ویرایش نکنید؛ هر تغییری در سازنده، این فایل را هم باید از نو ساخت.
+// ساخته‌شده از همان کد سازنده (helpers.js + core.js + render.js)؛ دستی ویرایش نکنید.
 /* global XLSX */
 // ---------------------------------------------------------------------------- متن و عدد
 const norm = (s) =>
@@ -170,12 +170,13 @@ function readTable(wb, key) {
     found[k] = i !== -1;
     if (i !== -1) idx[k] = i;
   }
-  const body = sheet.rows.slice(h.row + 1).map((r) => {
+  const rows = sheet.rows.slice(h.row + 1);
+  const body = rows.map((r) => {
     const o = {};
     for (const k in idx) o[k] = r[idx[k]];
     return o;
   });
-  return { sheetName: sheet.name, headerRow: h.row, body, found, top: sheet.rows.slice(0, h.row) };
+  return { sheetName: sheet.name, headerRow: h.row, body, found, idx, headCells, rows, top: sheet.rows.slice(0, h.row) };
 }
 
 function readHeaderValues(topRows) {
@@ -240,6 +241,9 @@ const CONFIG = {
       name: "Results",
       columns: { name: "نام و نام خانوادگی", mobile: "شماره تلفن همراه", date: "تاریخ اتمام" },
       optional: { gName: "نام و نام خانوادگی ضامن:", gMobile: "شماره تلفن همراه ضامن:", amount: "مبلغ وام مورد نیاز (به تومان):", count: "تعداد اقساط پیشنهادی:" },
+      // اگر سؤال نام ضامن عنوان دیگری دارد (مثل سؤال کشویی ضامن)، ستونی که «ضامن» در عنوانش هست و
+      // هیچ‌کدام از این کلمه‌ها را ندارد هم نام ضامن حساب می‌شود. ستون‌های حساس به این شکل کنار می‌مانند.
+      guarantorNameHint: { has: "ضامن", not: ["تلفن", "موبایل", "همراه", "شماره", "ملی", "کد", "کارت", "شبا", "حساب", "ایمیل", "آدرس", "نشانی", "سال", "تاریخ", "دانشگاه", "رشته", "تحصیل", "نسبت", "شغل"] },
     },
   },
   // برچسب‌های بالای شیت اعضا؛ مقدار هر کدام در اولین خانه‌ی پر بعد از برچسب است
@@ -348,17 +352,27 @@ function parseRequests(wb) {
   let badDate = 0;
   if (kind === "porsline") {
     const t = readTable(wb, "porsline");
-    t.body.forEach((r) => {
+    // ستون‌های نام ضامن: ستون با عنوان دقیق، به‌علاوه‌ی هر ستون دیگری که «ضامن» دارد و حساس نیست
+    const H = CONFIG.sheets.porsline.guarantorNameHint;
+    const gCols = t.headCells
+      .map((c, i) => i)
+      .filter((i) => i === t.idx.gName || i !== t.idx.gMobile && t.headCells[i].includes(norm(H.has)) && !H.not.some((w) => t.headCells[i].includes(norm(w))))
+      .sort((a, b) => (b === t.idx.gName) - (a === t.idx.gName)); // ستون با عنوان دقیق اول
+    const isName = (v) => v != null && /[\u0621-\u064A\u067E\u0686\u0698\u06A9\u06AF\u06CCA-Za-z]/.test(String(v));
+    t.body.forEach((r, k) => {
       const nameRaw = String(r.name == null ? "" : r.name).trim();
       if (!nameRaw && !r.mobile) return; // ردیف خالی
       const jdn = parseDate(r.date);
       if (jdn == null) { badDate++; return; }
+      const row = t.rows[k] || [];
+      const gv = gCols.map((i) => row[i]).find(isName);
+      const gNameRaw = String(gv == null ? "" : gv).trim();
       list.push({
         name: norm(nameRaw), nameRaw, mobile: normMobile(r.mobile), jdn, cancelled: false, received: null,
-        gName: norm(r.gName), gNameRaw: String(r.gName == null ? "" : r.gName).trim(), gMobile: normMobile(r.gMobile),
+        gName: norm(gNameRaw), gNameRaw, gMobile: normMobile(r.gMobile),
       });
     });
-    return { list, badDate, source: "porsline", hasGuarantor: !!t.found.gName || !!t.found.gMobile };
+    return { list, badDate, source: "porsline", hasGuarantor: gCols.length > 0 || !!t.found.gMobile };
   }
   const t = readTable(wb, "requests");
   t.body.forEach((r) => {
