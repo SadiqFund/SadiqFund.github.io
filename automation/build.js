@@ -25,6 +25,11 @@ const NOTIFY_ID = (process.env.NOTIFY_CHAT_ID || "").trim() || CHAT_ID; // پی�
 const SITE_URL = (process.env.SITE_URL || "").trim();
 const API = (process.env.TELEGRAM_API_BASE || "https://api.telegram.org").replace(/\/$/, "");
 const FORCE = process.env.FORCE_REBUILD === "true"; // ساخت دوباره با آخرین فایل‌ها، حتی بدون فایل تازه
+// پُرس‌لاین (اختیاری): اگر کلید و شناسه‌ی پرسش‌نامه باشد، گزینه‌های سؤال کشویی ضامن خودکار به‌روز می‌شود
+const PL_KEY = (process.env.PORSLINE_API_KEY || "").trim();
+const PL_SURVEY = (process.env.PORSLINE_SURVEY_ID || "").trim();
+const PL_QUESTION = (process.env.PORSLINE_QUESTION_ID || "").trim();
+const PL_API = (process.env.PORSLINE_API_BASE || "https://survey.porsline.ir").replace(/\/$/, "");
 
 const log = (msg) => console.log(`[dashboard] ${msg}`); // فقط پیام کلی، هرگز داده
 
@@ -67,6 +72,66 @@ async function sendGuarantors(r) {
   const flush = async () => { if (chunk.length) { await notify(chunk.join("\n")); chunk = []; } };
   for (const nm of names) { if ((chunk.join("\n") + "\n" + nm).length > 3500) await flush(); chunk.push(nm); }
   await flush();
+}
+
+// ---------- پُرس‌لاین: جایگزینی گزینه‌های سؤال کشویی «ضامن» با فهرست مجاز
+async function pl(method, pathname, body) {
+  const res = await fetch(`${PL_API}${pathname}`, {
+    method,
+    headers: { Authorization: `API-Key ${PL_KEY}`, "content-type": "application/json", accept: "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let j = null; try { j = JSON.parse(text); } catch (e) {}
+  if (!res.ok) { const err = new Error(`Porsline ${method} ${res.status}`); err.status = res.status; err.body = j; throw err; }
+  return j;
+}
+
+async function findGuarantorQuestion() {
+  if (PL_QUESTION) return Number(PL_QUESTION);
+  const survey = await pl("GET", `/api/v2/surveys/${PL_SURVEY}/`);
+  const qs = (survey && survey.questions) || [];
+  // سؤال‌هایی که «ضامن» در عنوانشان هست و گزینه دارند (کشویی/چندگزینه‌ای)
+  const cands = qs.filter((q) => Array.isArray(q.choices) && /ضامن/.test(String(q.title || q.html_title || "")));
+  if (cands.length === 1) {
+    await notify(`ℹ️ سؤال ضامن در پُرس‌لاین پیدا شد: «${String(cands[0].title || "").slice(0, 80)}» (شناسه ${cands[0].id}). اگر درست نیست، شناسه‌ی درست را در Secret با نام PORSLINE_QUESTION_ID بگذارید.`);
+    return cands[0].id;
+  }
+  const list = qs.filter((q) => Array.isArray(q.choices)).map((q) => `• ${q.id}: ${String(q.title || "").slice(0, 60)}`).join("\n");
+  await notify(`⚠️ ${cands.length ? "چند" : "هیچ"} سؤال گزینه‌دار با کلمه‌ی «ضامن» در عنوان پیدا شد. شناسه‌ی سؤال کشویی ضامن را از این فهرست در Secret با نام PORSLINE_QUESTION_ID بگذارید:\n${list || "(سؤال گزینه‌داری پیدا نشد)"}`);
+  return null;
+}
+
+async function updatePorsline(r) {
+  if (!PL_KEY || !PL_SURVEY || !r.guarantors) return;
+  const names = [...new Set(r.guarantors.eligible.map((e) => e.name))];
+  if (names.length < 3) { // محافظ: فهرست خیلی کوتاه احتمالاً یعنی داده‌ی ناقص؛ فرم را خالی نمی‌کنیم
+    await notify(`⚠️ فهرست ضامن‌های مجاز فقط ${D.fmtInt(names.length)} نفر است؛ برای احتیاط گزینه‌های فرم پُرس‌لاین عوض نشد.`);
+    return;
+  }
+  try {
+    const qid = await findGuarantorQuestion();
+    if (!qid) return;
+    const q = await pl("GET", `/api/v2/surveys/${PL_SURVEY}/questions/${qid}/`);
+    const old = Array.isArray(q.choices) ? q.choices : [];
+    const key = (x) => String(x || "").replace(/[يى]/g, "ی").replace(/ك/g, "ک").replace(/[\u200c\u200e\u200f\s]/g, "");
+    const byName = new Map(old.map((c) => [key(c.name), c]));
+    // نام‌هایی که از قبل بوده‌اند شناسه‌ی خودشان را نگه می‌دارند؛ نام‌های تازه بدون شناسه ساخته می‌شوند
+    const choices = names.map((n) => { const c = byName.get(key(n)); return c && c.id != null ? { id: c.id, name: n } : { name: n }; });
+    const same = old.length === choices.length && choices.every((c) => c.id != null) && old.every((c) => names.some((n) => key(n) === key(c.name)));
+    if (same) { log("porsline: guarantor choices already up to date."); await notify("ℹ️ گزینه‌های ضامن در فرم پُرس‌لاین از قبل به‌روز بود."); return; }
+    await pl("PATCH", `/api/v2/surveys/${PL_SURVEY}/questions/${qid}/`, { choices });
+    const added = choices.filter((c) => c.id == null).length;
+    const removed = old.filter((c) => !names.some((n) => key(n) === key(c.name))).length;
+    log(`porsline: guarantor choices updated.`);
+    await notify(`✅ گزینه‌های ضامن در فرم پُرس‌لاین به‌روز شد: ${D.fmtInt(names.length)} نفر (${D.fmtInt(added)} اضافه، ${D.fmtInt(removed)} حذف).`);
+  } catch (e) {
+    log(`porsline: update failed (${e.status || e.name}).`);
+    const why = e.status === 401 || e.status === 403 ? "کلید API پذیرفته نشد یا اجازه‌ی ویرایش ندارد (شاید این کار اشتراک لازم دارد)."
+      : e.status === 404 ? "پرسش‌نامه یا سؤال با این شناسه پیدا نشد."
+      : e.status ? `پاسخ پُرس‌لاین: خطای ${e.status}.` : "به پُرس‌لاین وصل نشد (شاید از بیرون ایران در دسترس نیست).";
+    await notify(`⚠️ گزینه‌های ضامن در فرم پُرس‌لاین به‌روز نشد: ${why}\nفهرست بالا را دستی در فرم بچسبانید.`);
+  }
 }
 
 async function notify(text) {
@@ -197,7 +262,7 @@ async function main() {
   if (html === prev) {
     log("dashboard unchanged.");
     await notify(`ℹ️ ${fresh.fund || fresh.req ? "فایل دریافت شد" : "ساخت دوباره انجام شد"}، ولی داشبورد تغییری نکرد.\nتاریخ گزارش: ${D.fmtDate(r.asOf)}`);
-    if (r.guarantors) await sendGuarantors(r);
+    if (r.guarantors) { await sendGuarantors(r); await updatePorsline(r); }
     return;
   }
   fs.writeFileSync(OUT_FILE, html);
@@ -209,7 +274,7 @@ async function main() {
     (skipped.length ? "\n\n" + skipped.map((x) => "• " + x).join("\n") : "") +
     (SITE_URL ? `\n\nچند دقیقه‌ی دیگر روی لینک دیده می‌شود:\n${SITE_URL}` : "")
   );
-  if (r.guarantors) await sendGuarantors(r);
+  if (r.guarantors) { await sendGuarantors(r); await updatePorsline(r); }
 }
 
 main().catch(async (e) => {
