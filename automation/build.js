@@ -152,12 +152,19 @@ async function plCount() {
 
 // خروجی اکسل همه‌ی پاسخ‌ها؛ همان فایلی که از دکمه‌ی خروجی اکسل پُرس‌لاین گرفته می‌شود
 async function plExport() {
-  const j = await pl("GET", `/api/v2/surveys/${PL_SURVEY}/responses/export/?export_format=1`);
+  // مقدار export_format در مستندات «1/2» است، ولی پُرس‌لاین واقعی «1» را نپذیرفت؛ به‌ترتیب امتحان می‌کنیم
+  let j = null, fmt = null, lastErr = null;
+  for (const f of ["xlsx", "csv", "1"]) {
+    try { j = await pl("GET", `/api/v2/surveys/${PL_SURVEY}/responses/export/?export_format=${f}`); fmt = f; break; }
+    catch (e) { lastErr = e; if (!(e.status === 400 && e.body && typeof e.body === "object" && "export_format" in e.body)) throw e; }
+  }
+  if (!fmt) throw lastErr;
   let url = j && j.export;
   if (!url) { const e = new Error("no export url"); e.kind = "format"; throw e; }
   if (url.startsWith("/")) url = PL_API + url;
   // کلید فقط برای نشانی خود پُرس‌لاین فرستاده می‌شود، نه برای میزبان دیگری که فایل را نگه می‌دارد
   const sameHost = (() => { try { return new URL(url).host === new URL(PL_API).host; } catch (e) { return false; } })();
+  const nameCol = D.CONFIG.sheets.porsline.columns.name;
   let last = 0;
   for (let i = 0; i < 8; i++) {
     for (const auth of sameHost ? [false, true] : [false]) {
@@ -167,6 +174,13 @@ async function plExport() {
       if (res.ok) {
         const buf = new Uint8Array(await res.arrayBuffer());
         if (buf[0] === 0x50 && buf[1] === 0x4b) return XLSX.read(buf, { type: "array" }); // فایل اکسل (zip)
+        const text = new TextDecoder("utf-8").decode(buf).replace(/^﻿/, "");
+        if (text.includes(nameCol)) { // فایل csv
+          const wb = XLSX.read(text, { type: "string", raw: true });
+          const name = D.CONFIG.sheets.porsline.name;
+          if (wb.SheetNames[0] !== name) { wb.Sheets[name] = wb.Sheets[wb.SheetNames[0]]; delete wb.Sheets[wb.SheetNames[0]]; wb.SheetNames[0] = name; }
+          return wb;
+        }
         break; // هنوز آماده نیست
       }
       if (res.status !== 401 && res.status !== 403) break;
