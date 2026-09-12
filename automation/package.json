@@ -2,9 +2,15 @@
   "name": "fund-dashboard-automation",
   "private": true,
   "description": "ساخت خودکار داشبورد صندوق از اکسل‌های کانال تلگرام",
-  "scripts": { "build": "node build.js" },
-  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node build.js",
+    "email": "node send-email.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
-    "xlsx": "0.18.5"
+    "xlsx": "0.18.5",
+    "nodemailer": "7.0.3"
   }
 }
