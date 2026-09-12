@@ -276,17 +276,18 @@ const CONFIG = {
   requestExpiryMonths: 9, // درخواستی که این مدت به وام نرسد، منقضی حساب می‌شود و در صف نمی‌ماند
   // شرط‌های ضامن مجاز (فهرست با هر اکسل تازه برای مدیر صندوق فرستاده می‌شود؛ در داشبورد عمومی نمی‌آید)
   guarantor: {
-    maxLateInstallments: 0, // اگر روی وام‌های خودش بیش از این تعداد قسط معوق داشته باشد، ضامن نمی‌شود
-    lateDaysLimit: 30, lateLookbackMonths: 12, // در این چند ماه هیچ قسطی بیش از این چند روز دیر پرداخت نشده باشد
+    maxLateInstallments: 1, // اگر روی وام‌های خودش بیش از این تعداد قسط معوق داشته باشد، ضامن نمی‌شود
+    lateDaysLimit: 45, lateLookbackMonths: 12, // در این چند ماه هیچ قسطی بیش از این چند روز دیر پرداخت نشده باشد
     inactiveMonths: 3, // در این چند ماه دست‌کم یک تراکنش (حق عضویت، قسط، واریز، …) داشته باشد
     minTenureMonths: 6, // دست‌کم این چند ماه از اولین تراکنشش گذشته باشد
-    noWithdrawMonths: 12, // در این چند ماه «برداشت متفرقه» نداشته باشد
     minCapital: 10000000, // حداقل سرمایه‌ی شخصی (تومان)
-    maxOwnDebtRatio: 2, // مانده‌ی وام‌های در جریان خودش بیش از این چند برابر سرمایه‌اش نباشد
+    maxOwnDebtRatio: 2.5, // مانده‌ی وام‌های در جریان خودش بیش از این چند برابر سرمایه‌اش نباشد
     maxActiveGuarantees: 2, // حداکثر ضمانت وام‌های در جریان (پایه)
-    // استثنا برای سرمایه‌ی زیاد: به ازای هر «پله» سرمایه بیش از «از»، یک ضمانت بیشتر، تا «سقف»
-    // (۶۰ میلیون ← ۳، ۸۰ میلیون ← ۴، ۱۰۰ میلیون و بیشتر ← ۵)
-    extraGuarantees: { from: 40000000, step: 20000000, max: 5 },
+    // استثنا برای سرمایه‌ی زیاد: از «از» به بالا یک ضمانت بیشتر، و به ازای هر «پله» بیشتر یکی دیگر، تا «سقف»
+    // (۵۰ میلیون ← ۳، ۷۰ میلیون ← ۴، ۹۰ میلیون و بیشتر ← ۵)
+    extraGuarantees: { from: 50000000, step: 20000000, max: 5 },
+    // فقط یادداشت اطلاعاتی در کارت بررسی؛ شرط رد شدن نیست
+    withdrawNoteMonths: 12,
   },
   // اصلاح نام‌های اکسل صندوق: { "نام در اکسل": "نام درست" }. در مخزن عمومی خالی می‌ماند؛
   // خودکارساز آن را از Secret با نام NAME_FIXES پر می‌کند (نام‌ها نباید در کد عمومی بیایند).
@@ -761,18 +762,17 @@ function compute(data, req) {
       };
       // سقف ضمانت هر نفر: پایه، به‌علاوه‌ی پله‌های سرمایه‌ی زیاد
       const X = G.extraGuarantees;
-      const capOf = (capital) => !X ? G.maxActiveGuarantees
-        : Math.min(Math.max(X.max, G.maxActiveGuarantees), G.maxActiveGuarantees + Math.max(0, Math.floor((capital - X.from) / X.step)));
+      const capOf = (capital) => !X || capital < X.from ? G.maxActiveGuarantees
+        : Math.min(Math.max(X.max, G.maxActiveGuarantees), G.maxActiveGuarantees + 1 + Math.floor((capital - X.from) / X.step));
       const reasons = [
         { key: "late", label: G.maxLateInstallments ? `بیش از ${fmtInt(G.maxLateInstallments)} قسط معوق` : "قسط معوق دارد", rule: G.maxLateInstallments ? `حداکثر ${fmtInt(G.maxLateInstallments)} قسط معوق` : "هیچ قسط معوق نداشته باشد" },
         { key: "history", label: `قسطی بیش از ${fmtInt(G.lateDaysLimit)} روز دیر در ${fmtInt(G.lateLookbackMonths)} ماه اخیر`, rule: `در ${fmtInt(G.lateLookbackMonths)} ماه اخیر هیچ قسطی را بیش از ${fmtInt(G.lateDaysLimit)} روز دیر نداده باشد` },
         { key: "inactive", label: `بدون تراکنش در ${fmtInt(G.inactiveMonths)} ماه اخیر`, rule: `در ${fmtInt(G.inactiveMonths)} ماه اخیر دست‌کم یک تراکنش داشته باشد` },
         { key: "tenure", label: `کمتر از ${fmtInt(G.minTenureMonths)} ماه عضویت`, rule: `دست‌کم ${fmtInt(G.minTenureMonths)} ماه عضو باشد` },
-        { key: "withdraw", label: `برداشت از سرمایه در ${fmtInt(G.noWithdrawMonths)} ماه اخیر`, rule: `در ${fmtInt(G.noWithdrawMonths)} ماه اخیر از سرمایه‌اش برداشت نکرده باشد` },
         { key: "capital", label: `سرمایه‌ی کمتر از ${fmtMoney(G.minCapital, true)}`, rule: `سرمایه‌ی شخصی دست‌کم ${fmtMoney(G.minCapital, true)}` },
-        { key: "debt", label: `مانده‌ی وام خودش بیش از ${fmtInt(G.maxOwnDebtRatio)} برابر سرمایه`, rule: `مانده‌ی وام‌های خودش حداکثر ${fmtInt(G.maxOwnDebtRatio)} برابر سرمایه‌اش` },
+        { key: "debt", label: `مانده‌ی وام خودش بیش از ${fmtRatio(G.maxOwnDebtRatio)} برابر سرمایه`, rule: `مانده‌ی وام‌های خودش حداکثر ${fmtRatio(G.maxOwnDebtRatio)} برابر سرمایه‌اش` },
         { key: "cap", label: "به سقف ضمانتش رسیده",
-          rule: `کمتر از ${fmtInt(G.maxActiveGuarantees)} ضمانت وام در جریان` + (X ? `؛ به ازای هر ${fmtMoney(X.step, true)} سرمایه بیش از ${fmtMoney(X.from, true)}، یک ضمانت بیشتر (حداکثر ${fmtInt(X.max)})` : "") },
+          rule: `کمتر از ${fmtInt(G.maxActiveGuarantees)} ضمانت وام در جریان` + (X ? `؛ از ${fmtMoney(X.from, true)} سرمایه به بالا ${fmtInt(G.maxActiveGuarantees + 1)} وام، و به ازای هر ${fmtMoney(X.step, true)} بیشتر یک وام دیگر (حداکثر ${fmtInt(X.max)})` : "") },
       ];
       const labelOf = Object.fromEntries(reasons.map((x) => [x.key, x.label]));
       const personBy = new Map(data.people.map((p) => [p.name, p]));
@@ -784,14 +784,14 @@ function compute(data, req) {
         const late = lateBy.get(name) || 0, n = load.get(name) || 0, delay = maxDelay(name);
         const mine = all.filter((t) => T[t.type] !== "loan" && T[t.type] !== "settle");
         const first = all[0], lastMine = mine[mine.length - 1];
-        const withdraw = mine.some((t) => T[t.type] === "withdraw" && t.jdn > ago(G.noWithdrawMonths));
+        // برداشت از سرمایه دیگر شرط رد نیست؛ فقط برای یادداشت در کارت بررسی نگه داشته می‌شود
+        const withdraw = mine.some((t) => T[t.type] === "withdraw" && t.jdn > ago(G.withdrawNoteMonths));
         const debt = activeBy.get(name) || 0;
         const why =
           late > G.maxLateInstallments ? "late"
           : delay > G.lateDaysLimit ? "history"
           : !lastMine || lastMine.jdn <= ago(G.inactiveMonths) ? "inactive"
           : !first || first.jdn > ago(G.minTenureMonths) ? "tenure"
-          : withdraw ? "withdraw"
           : p.capital < G.minCapital ? "capital"
           : debt > G.maxOwnDebtRatio * Math.max(p.capital, 0) ? "debt"
           : n >= capOf(p.capital) ? "cap"
@@ -883,6 +883,8 @@ function compute(data, req) {
 
 // ---------------------------------------------------------------------------- قالب‌بندی
 const fmtInt = (n) => Math.round(n).toLocaleString("fa-IR");
+// عدد با اعشار کم (مثل ۲٫۵ برابر سرمایه)؛ اگر رُند باشد اعشار نمی‌گیرد
+const fmtRatio = (n) => Number(n).toLocaleString("fa-IR", { maximumFractionDigits: 2 });
 function fmtMoney(n, withUnit = false) {
   const a = Math.abs(n);
   let s;

@@ -81,7 +81,6 @@ async function sendGuarantors(r, plStatus) {
     history: (a) => `بیشترین دیرکرد ${days(a.maxDelay)}`,
     inactive: (a) => (a.lastTxDays == null ? "هیچ تراکنشی ندارد" : `آخرین تراکنش ${days(a.lastTxDays)} پیش`),
     tenure: (a) => `${(a.tenureDays / 30.44).toLocaleString("fa-IR", { maximumFractionDigits: 1 })} ماه عضویت`,
-    withdraw: () => "",
     capital: (a) => `سرمایه ${money(a.capital)}`,
     debt: (a) => `مانده‌ی وام ${money(a.activeDebt)}، سرمایه ${money(a.capital)}`,
     cap: (a) => `ضامن ${n(a.guarantees)} وام از سقف ${n(a.maxGuarantees)}`,
@@ -356,7 +355,8 @@ function reviewCard(r, x) {
     lines.push(`• بیشترین تأخیر قسط در ${D.fmtInt(D.CONFIG.guarantor.lateLookbackMonths)} ماه اخیر: ${a.loansN ? `${a.maxDelay > D.CONFIG.guarantor.lateDaysLimit ? "⚠️ " : ""}${D.fmtInt(a.maxDelay)} روز` : "وامی نگرفته"}`);
     lines.push(`• وام در جریان: ${a.activeLoansN ? `${D.fmtInt(a.activeLoansN)} وام، مانده ${D.fmtMoney(a.activeDebt, true)}` : "ندارد"}${a.loansN ? ` (تا حالا ${D.fmtInt(a.loansN)} وام)` : ""}`);
     lines.push(`• آخرین تراکنش: ${a.lastTxDays == null ? "⚠️ ندارد" : a.lastTxDays <= 0 ? "همان روز اکسل" : `${D.fmtInt(a.lastTxDays)} روز پیش از اکسل`}`);
-    if (a.withdraw) lines.push(`• ⚠️ در ${D.fmtInt(D.CONFIG.guarantor.noWithdrawMonths)} ماه اخیر از سرمایه‌اش برداشت کرده`);
+    // برداشت از سرمایه دیگر شرط رد نیست؛ فقط یادداشت اطلاعاتی است
+    if (a.withdraw) lines.push(`• ℹ️ در ${D.fmtInt(D.CONFIG.guarantor.withdrawNoteMonths)} ماه اخیر از سرمایه‌اش برداشت کرده`);
   }
   // ضامن
   if (R.hasGuarantor) {
