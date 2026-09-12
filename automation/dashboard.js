@@ -1,4 +1,4 @@
-// ساخته‌شده از همان کد سازنده (helpers.js + core.js + render.js)؛ دستی ویرایش نکنید.
+// ساخته‌شده از همان کد سازنده (helpers.js + core.js + render.js + email.js)؛ دستی ویرایش نکنید.
 /* global XLSX */
 // ---------------------------------------------------------------------------- متن و عدد
 const norm = (s) =>
@@ -1582,5 +1582,115 @@ window.__D = ${JSON.stringify(D)};
 </body>
 </html>`;
 }
+// ============================================================================
+// قالب ایمیل خبرنامه‌ی صندوق برای اعضا. خروجی HTML ساده و جدول‌محور است تا در
+// Gmail و بقیه‌ی ایمیل‌خوان‌ها درست دیده شود. هیچ نام یا اطلاعات فردی در آن نمی‌آید.
+// ============================================================================
+const escE = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const EMAIL = {
+  navy: "#0A1A4F", blue: "#0049E8", ink: "#1A2333", muted: "#5B6B85",
+  line: "#E3E8F1", soft: "#F4F6FB", card: "#FFFFFF",
+  font: "Tahoma, 'Segoe UI', Arial, sans-serif",
+};
 
-module.exports = { CONFIG, THEME, parseWorkbook, parseRequests, detectKind, compute, renderReport, loadNameFixes, fmtDate, fmtNum, fmtInt, fmtMoney, ReportError };
+function renderEmail(r, o) {
+  o = o || {};
+  const E = EMAIL;
+  const site = String(o.siteUrl || "").trim();
+  const esc2 = (s) => escE(String(s == null ? "" : s));
+  const rtl = "direction:rtl;text-align:right;"; // برای Gmail: هنگام چسباندن، dir روی <html> دور ریخته می‌شود
+  const money = (n) => fmtMoney(n, true);
+  const upd = fmtDate(r.asOf);
+  const mo = r.month;
+  const cm = r.months[r.months.length - 1] || {};
+  const curColl = (cm.repay || 0) + (cm.fee || 0) + (cm.deposit || 0) + (cm.other || 0);
+
+  // کارت‌ها با inline-block چیده می‌شوند، نه با ستون جدول: در عرض کم خودشان زیر هم می‌آیند
+  // بدون اینکه به media query نیاز باشد (Gmail هنگام چسباندن، بخش <style> را دور می‌ریزد).
+  const cell = (label, value, sub) => `<div style="display:inline-block;vertical-align:top;width:50%;min-width:272px;max-width:100%;padding:8px;box-sizing:border-box;font-size:15px;${rtl}">`
+      + `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" style="background:${E.soft};border-radius:12px;${rtl}">`
+      + `<tr><td dir="rtl" style="padding:14px 16px;font-family:${E.font};${rtl}">`
+      + `<div style="font-size:13px;color:${E.muted};line-height:1.7;">${esc2(label)}</div>`
+      + `<div style="font-size:21px;font-weight:bold;color:${E.ink};line-height:1.6;">${esc2(value)}</div>`
+      + (sub ? `<div style="font-size:12px;color:${E.muted};line-height:1.6;">${esc2(sub)}</div>` : "")
+      + `</td></tr></table></div>`;
+
+  const btn = (text, href, primary) => `
+    <table role="presentation" dir="rtl" cellpadding="0" cellspacing="0" align="center" style="margin:6px auto;direction:rtl;">
+      <tr><td align="center" bgcolor="${primary ? E.blue : "#FFFFFF"}" style="border-radius:10px;${primary ? "" : `border:1px solid ${E.line};`}">
+        <a href="${esc2(href)}" style="display:inline-block;padding:${primary ? "13px 34px" : "11px 26px"};font-family:${E.font};font-size:${primary ? "16px" : "14px"};font-weight:bold;color:${primary ? "#FFFFFF" : E.blue};text-decoration:none;border-radius:10px;">${esc2(text)}</a>
+      </td></tr>
+    </table>`;
+
+  const rows = [];
+  rows.push(`<tr><td dir="rtl" style="padding:22px 24px 6px;font-family:${E.font};font-size:15px;line-height:2;color:${E.ink};${rtl}">
+      ${o.note ? esc2(o.note).replace(/\n/g, "<br>") : `سلام،<br>گزارش تازه‌ی صندوق تا ${esc2(upd)} آماده است.`}
+    </td></tr>`);
+  rows.push(`<tr><td style="padding:6px 16px;">
+      <div dir="rtl" style="font-size:0;direction:rtl;text-align:center;">${
+        cell("دارایی کل صندوق", money(r.capital), `${fmtInt(r.memberCount)} عضو فعال`)
+      }${cell("وام‌های در جریان", `${fmtInt(r.active.n)} وام`, `مانده ${money(r.active.remaining)}`)
+      }${cell("وام‌های این ماه", mo.loanN ? `${fmtInt(mo.loanN)} وام` : "—", mo.loanN ? `به ارزش ${money(mo.loanAmt)}` : "تا امروز وامی پرداخت نشده")
+      }${cell("وصولی این ماه", curColl ? money(curColl) : "—", mo.due ? `${fmtInt(mo.paid)} از ${fmtInt(mo.due)} قسط سررسیدشده پرداخت شده` : "هنوز قسطی سررسید نشده")}</div>
+    </td></tr>`);
+  if (site) rows.push(`<tr><td style="padding:14px 24px 4px;">${btn("مشاهده داشبورد صندوق", site, true)}</td></tr>
+    <tr><td dir="rtl" style="padding:0 24px 8px;font-family:${E.font};font-size:12px;color:${E.muted};line-height:1.8;direction:rtl;text-align:center;">
+      داشبورد با هر گزارش تازه‌ی صندوق خودکار به‌روز می‌شود.</td></tr>`);
+
+  return `<!doctype html>
+<html lang="fa" dir="rtl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc2(r.fundName)}</title></head>
+<body style="margin:0;padding:0;background:${E.soft};">
+<div dir="rtl" style="${rtl}">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">دارایی کل ${money(r.capital)} · ${fmtInt(r.active.n)} وام در جریان · به‌روز تا ${esc2(upd)}</div>
+<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" style="background:${E.soft};padding:18px 10px;${rtl}">
+  <tr><td align="center">
+    <table role="presentation" dir="rtl" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${E.card};border-radius:16px;overflow:hidden;${rtl}">
+      <tr><td dir="rtl" style="background:${E.navy};padding:26px 24px 22px;font-family:${E.font};direction:rtl;text-align:center;" align="center">
+        ${site
+          ? `<img src="${esc2(site)}/email-logo.png" width="260" height="54" alt="${esc2(r.fundName)}" style="display:block;margin:0 auto 8px;border:0;outline:none;text-decoration:none;width:260px;max-width:72%;height:auto;">`
+          : `<div style="font-size:19px;font-weight:bold;color:#FFFFFF;line-height:1.6;">${esc2(r.fundName)}</div>`}
+        <div style="font-size:13px;color:#B9C6E8;line-height:1.7;">گزارش صندوق · به‌روز تا ${esc2(upd)}</div>
+      </td></tr>
+      ${rows.join("\n")}
+      <tr><td style="padding:12px 16px 4px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${E.soft};border-radius:12px;">
+          <tr><td dir="rtl" align="center" style="padding:14px 16px;font-family:${E.font};font-size:13px;color:${E.muted};line-height:2.1;direction:rtl;text-align:center;">
+            کانال بله: <span dir="ltr"><a href="${esc2(CONTACT.bale.url)}" style="color:${E.navy};font-weight:bold;text-decoration:none;">${esc2(CONTACT.bale.handle)}</a></span><br>
+            ایمیل: <span dir="ltr"><a href="mailto:${esc2(CONTACT.email)}" style="color:${E.navy};font-weight:bold;text-decoration:none;">${esc2(CONTACT.email)}</a></span>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td dir="rtl" style="padding:16px 24px 22px;border-top:1px solid ${E.line};font-family:${E.font};font-size:12px;color:${E.muted};line-height:1.9;${rtl}" align="right">
+        این ایمیل فقط ارقام کلی صندوق را دارد و هیچ اطلاعاتی درباره‌ی اعضا در آن نیست.<br>
+        اگر نمی‌خواهید این ایمیل را دریافت کنید، به مدیر صندوق خبر بدهید.
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</div>
+</body>
+</html>`;
+}
+
+// نسخه‌ی متنی ساده (برای ایمیل‌خوان‌هایی که HTML نشان نمی‌دهند یا کپی سریع در پیام‌رسان)
+function renderEmailText(r, o) {
+  o = o || {};
+  const mo = r.month, upd = fmtDate(r.asOf);
+  const cm = r.months[r.months.length - 1] || {};
+  const curColl = (cm.repay || 0) + (cm.fee || 0) + (cm.deposit || 0) + (cm.other || 0);
+  return [
+    `${r.fundName} — گزارش تا ${upd}`,
+    o.note || "",
+    `دارایی کل: ${fmtMoney(r.capital, true)} (${fmtInt(r.memberCount)} عضو فعال)`,
+    `وام‌های در جریان: ${fmtInt(r.active.n)} وام، مانده ${fmtMoney(r.active.remaining, true)}`,
+    mo.loanN ? `وام‌های این ماه: ${fmtInt(mo.loanN)} وام به ارزش ${fmtMoney(mo.loanAmt, true)}` : "این ماه هنوز وامی پرداخت نشده است.",
+    curColl ? `وصولی این ماه تا امروز: ${fmtMoney(curColl, true)}` + (mo.due ? `؛ ${fmtInt(mo.paid)} از ${fmtInt(mo.due)} قسط سررسیدشده پرداخت شده` : "") : "",
+    o.siteUrl ? `داشبورد: ${o.siteUrl}` : "",
+    `کانال بله: ${CONTACT.bale.handle} (${CONTACT.bale.url})`,
+    `ایمیل: ${CONTACT.email}`,
+  ].filter(Boolean).join("\n");
+}
+
+module.exports = { CONFIG, THEME, CONTACT, parseWorkbook, parseRequests, detectKind, compute, renderReport, renderEmail, renderEmailText, loadNameFixes, fmtDate, fmtNum, fmtInt, fmtMoney, ReportError };
