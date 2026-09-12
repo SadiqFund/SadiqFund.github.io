@@ -14,6 +14,7 @@ const fs = require("fs");
 const path = require("path");
 global.XLSX = require("xlsx");
 const D = require("./dashboard.js");
+const SHEET = require("./sheet.js"); // سند گوگل (اختیاری؛ بدون SHEET_URL بی‌صدا رد می‌شود)
 
 const ROOT = path.resolve(__dirname, "..");
 const STATE_FILE = path.join(__dirname, "state.json");
@@ -419,6 +420,32 @@ const readState = () => { try { return JSON.parse(fs.readFileSync(STATE_FILE, "u
 const writeState = (s) => fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2) + "\n");
 
 let state = {};
+// نوشتن در سند گوگل: یک ردیف تاریخچه، و درخواست‌های تازه‌ی فرم در تب «صف وام».
+// هر خطایی این‌جا فقط یک پیام تلگرام است؛ داشبورد منتشرشده دست‌نخورده می‌ماند.
+async function writeToSheet(r, fundWb) {
+  if (!SHEET.ON) return;
+  const problems = [];
+  try { await SHEET.history(D, r, D.parseWorkbook(fundWb).header); }
+  catch (e) { problems.push("تاریخچه: " + e.message); }
+  try {
+    const list = (r.review && r.review.list) || [];
+    const rows = list.map((x) => {
+      const d = D.J.d2j(x.jdn);
+      const p = r.review.rosterFind ? r.review.rosterFind(x.mobile, x.name) : null;
+      return {
+        name: x.nameRaw || x.name,
+        code: p && p.code ? p.code : "",
+        date: `${d.jy}/${String(d.jm).padStart(2, "0")}/${String(d.jd).padStart(2, "0")}`,
+        amount: x.amount || "",
+        count: x.count || "",
+        guarantor: x.gNameRaw || "",
+      };
+    }).filter((x) => x.name);
+    await SHEET.queue(D, rows);
+  } catch (e) { problems.push("صف وام: " + e.message); }
+  if (problems.length) await notify("⚠️ نوشتن در سند گوگل کامل نشد:\n" + problems.map((x) => "• " + x).join("\n"));
+}
+
 async function main() {
   if (!TOKEN) { log("TELEGRAM_BOT_TOKEN is not set; nothing to do."); return; }
   state = readState();
@@ -574,13 +601,18 @@ async function main() {
   }
 
   // ---------- ۵. همان کنترل‌های سازنده
-  let r, reqError = null;
+  let r, reqError = null, sheetErr = null;
   try {
     let req = api ? api.req : null;
     if (!req && reqWb) { try { req = D.parseRequests(reqWb); } catch (e) { reqError = e; } }
-    r = D.compute(D.parseWorkbook(fundWb), req);
+    // دفتر وام‌های سند گوگل: ضامن وام‌هایی که درخواستشان در فرم نیست. خطایش ساخت را متوقف نمی‌کند.
+    let loanGuarantors = [];
+    try { loanGuarantors = await SHEET.loanGuarantors(D); }
+    catch (e) { sheetErr = "خواندن دفتر وام‌های سند گوگل انجام نشد: " + e.message; log("register read failed."); }
+    r = D.compute(D.parseWorkbook(fundWb), req, { loanGuarantors });
     if (reqError) r.checks.unshift({ level: "error", text: "فایل درخواست‌ها خوانده نشد: " + reqError.message });
     if (reqNote) r.checks.push({ level: "warn", text: reqNote });
+    if (sheetErr) r.checks.push({ level: "warn", text: sheetErr });
   } catch (e) {
     await notify("⛔ داشبورد منتشر نشد.\n\n" + (e instanceof D.ReportError ? e.message : "فایل صندوق خوانده نشد.") + "\n\nنسخه‌ی قبلی داشبورد بدون تغییر ماند.");
     writeState(state);
@@ -635,6 +667,7 @@ async function main() {
   }
   await sendReviews(r);
   writeState(state);
+  await writeToSheet(r, fundWb);
   // اول فرم پُرس‌لاین به‌روز می‌شود تا وضعیتش در خلاصه‌ی گزارش ضامن‌ها بیاید
   const plStatus = r.guarantors ? await updatePorsline(r, !loud) : null;
   if (sendG) await sendGuarantors(r, plStatus && plStatus.text);

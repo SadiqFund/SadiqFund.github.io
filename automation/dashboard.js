@@ -527,7 +527,9 @@ const median = (arr) => {
 const monthKey = (jdn) => { const d = J.d2j(jdn); return d.jy * 12 + d.jm - 1; };
 const monthStartOf = (key) => J.j2d(Math.floor(key / 12), (key % 12) + 1, 1);
 
-function compute(data, req) {
+// extra.loanGuarantors: [{ name, jdn, guarantor }] — دفتر وام‌های سند گوگل، برای وام‌هایی که
+// درخواستشان در فرم نیست (وام‌های پیش از راه‌اندازی پُرس‌لاین). فقط ضامن را پر می‌کند، نه چیز دیگر.
+function compute(data, req, extra) {
   const { header, tx, loans } = data;
   const T = Object.fromEntries(Object.entries(CONFIG.txTypes).map(([k, v]) => [norm(v), k]));
   const checks = [...data.notes];
@@ -719,17 +721,40 @@ function compute(data, req) {
     // --- سنجش اعضا: فهرست ضامن‌های مجاز و کارت بررسی درخواست‌ها (فقط برای مدیر صندوق، هرگز در داشبورد)
     {
       const G = CONFIG.guarantor;
-      const load = new Map(), unknownGList = []; let unknownG = 0, noReq = 0;
+      const load = new Map(), unknownGList = []; let unknownG = 0, noReq = 0, fromSheet = 0;
+      // دفتر وام‌های سند گوگل: نام گیرنده + تاریخ پرداخت ← نام ضامن
+      const regBy = new Map();
+      for (const x of (extra && extra.loanGuarantors) || []) {
+        const k = norm(x.name);
+        if (!regBy.has(k)) regBy.set(k, []);
+        regBy.get(k).push(x);
+      }
+      const fromRegister = (l) => {
+        const c = regBy.get(l.who) || [];
+        // نزدیک‌ترین ردیف به تاریخ پرداخت وام (حداکثر ۱۵ روز فاصله)
+        let best = null, bestD = Infinity;
+        for (const x of c) { const d = Math.abs(x.jdn - l.jdn); if (d <= 15 && d < bestD) { best = x; bestD = d; } }
+        return best;
+      };
       if (req.hasGuarantor) for (const l of active) {
         const r = reqOfLoan.get(l);
-        if (!r) { noReq++; continue; }
-        const g = resolve(r.gMobile, r.gName);
+        let gName = r ? r.gName : null, gMobile = r ? r.gMobile : null, gRaw = r ? r.gNameRaw : null, viaSheet = false;
+        if (!r || (!resolve(gMobile, gName))) {
+          const x = fromRegister(l);
+          // ستون ضامنِ سند گاهی یادداشت است، نه نام (مثل «وام اربعین»). فقط وقتی استفاده می‌شود
+          // که به عضوی برسد یا دست‌کم در فهرست اعضا باشد؛ وگرنه مثل قبل «بی‌درخواست» می‌ماند.
+          const ok = x && (resolve(null, norm(x.guarantor)) || (data.rosterFind && data.rosterFind(null, norm(x.guarantor))));
+          if (ok) { gName = norm(x.guarantor); gMobile = null; gRaw = x.guarantor; viaSheet = true; }
+        }
+        if (!r && !viaSheet) { noReq++; continue; }
+        const g = resolve(gMobile, gName);
         if (!g) {
           unknownG++;
-          const rf = data.rosterFind ? data.rosterFind(r.gMobile, r.gName) : null;
-          unknownGList.push({ borrower: l.whoRaw, typed: r.gNameRaw || (r.gMobile ? "0" + r.gMobile : ""), roster: rf ? rf.name : null });
+          const rf = data.rosterFind ? data.rosterFind(gMobile, gName) : null;
+          unknownGList.push({ borrower: l.whoRaw, typed: gRaw || (gMobile ? "0" + gMobile : ""), roster: rf ? rf.name : null });
           continue;
         }
+        if (viaSheet) fromSheet++;
         load.set(g, (load.get(g) || 0) + 1);
       }
       const ago = (months) => { const d = J.d2j(asOf); return J.addMonths(d.jy, d.jm, d.jd, -months); };
@@ -817,7 +842,7 @@ function compute(data, req) {
         const fa = (a, b) => a.localeCompare(b, "fa");
         eligible.sort((a, b) => fa(a.name, b.name));
         // هر دلیل: فهرست افراد با جزئیات سنجششان (برای پیام تفکیک‌شده‌ی مدیر)
-        guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key].map((a) => a.name), people: out[x.key] })), noReq, unknownG, unknownGList, activeN: active.length };
+        guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key].map((a) => a.name), people: out[x.key] })), noReq, unknownG, unknownGList, fromSheet, activeN: active.length };
       }
       review = { assess, resolve, rosterFind: data.rosterFind, queue: queueList, list: req.list, waitMedian: wait.median, hasGuarantor: req.hasGuarantor };
     }
@@ -1701,4 +1726,4 @@ function renderEmailText(r, o) {
   ].filter(Boolean).join("\n");
 }
 
-module.exports = { CONFIG, THEME, CONTACT, parseWorkbook, parseRequests, detectKind, compute, renderReport, renderEmail, renderEmailText, loadNameFixes, fmtDate, fmtNum, fmtInt, fmtMoney, ReportError };
+module.exports = { CONFIG, THEME, CONTACT, J, parseWorkbook, parseRequests, detectKind, compute, renderReport, renderEmail, renderEmailText, loadNameFixes, fmtDate, fmtNum, fmtInt, fmtMoney, ReportError };
