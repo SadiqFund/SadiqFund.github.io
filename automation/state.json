@@ -7,7 +7,7 @@
   },
   "lastBuild": {
     "reportDate": "۲۰ شهریور ۱۴۰۵",
-    "at": "2026-09-12T07:33:38.893Z"
+    "at": "2026-09-12T10:13:02.937Z"
   },
   "req": {
     "file_id": "BQACAgQAAx0CfR8yXwADXWqjWikVEc6l2oS7GHXOvB6GwdhYAAL4IQACB_AZUWoBdUhRL9EaPQQ",
@@ -16,9 +16,9 @@
   },
   "gHash": "1ee86e14b1dfbd65",
   "plVia": "export",
-  "plHash": "f3a3db0ce933d6fe",
-  "plCount": 90,
-  "plCheckedAt": "2026-09-12T09:32:55.056Z",
+  "plHash": "a43e11fe2b2c99f6",
+  "plCount": 91,
+  "plCheckedAt": "2026-09-12T10:13:01.909Z",
   "seenReq": [
     "0052ed353c",
     "0162b9450e",
@@ -35,6 +35,7 @@
     "2c0db7b790",
     "2d3b6e9391",
     "2da9a3225f",
+    "30692e128b",
     "335f7c0d2c",
     "34240af2b3",
     "35d9c681a4",
