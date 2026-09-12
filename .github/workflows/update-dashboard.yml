@@ -45,6 +45,8 @@ jobs:
           PORSLINE_SURVEY_ID: ${{ secrets.PORSLINE_SURVEY_ID }}
           PORSLINE_QUESTION_ID: ${{ secrets.PORSLINE_QUESTION_ID }}
           NAME_FIXES: ${{ secrets.NAME_FIXES }}
+          SHEET_URL: ${{ secrets.SHEET_URL }}
+          SHEET_TOKEN: ${{ secrets.SHEET_TOKEN }}
           SITE_URL: https://${{ github.repository_owner }}.github.io
           FORCE_REBUILD: ${{ inputs.force }}
         run: node build.js
