@@ -200,6 +200,12 @@ function readHeaderValues(topRows) {
 // ============================================================================
 // تنظیمات: اگر نرم‌افزار صندوق نام شیت‌ها یا ستون‌ها را عوض کرد، فقط همین‌جا را اصلاح کنید.
 // ============================================================================
+// راه‌های ارتباط با صندوق (پایین داشبورد و در ایمیل). برای تغییر فقط همین‌جا را اصلاح کنید.
+const CONTACT = {
+  bale: { handle: "@sadiqanidishan", url: "https://ble.ir/sadiqanidishan" },
+  email: "sadiqandishan@gmail.com",
+};
+
 const CONFIG = {
   sheets: {
     members: {
@@ -931,9 +937,8 @@ body{font-family:"Dana FaNum",Tahoma,sans-serif;color:var(--ink);background:var(
 .brand{display:flex;align-items:center;gap:12px}
 .logo{width:46px;height:46px;display:grid;place-items:center;flex:none;color:var(--logo)}
 .logo svg{width:100%;height:100%;display:block}
-.brand .fund{font-size:13px;color:var(--muted);line-height:1.5}
 .brand h1{font-size:20px;font-weight:800;line-height:1.4;color:var(--ink)}
-.brand h1.wm{height:20px;line-height:0;color:var(--logo);margin:3px 0 2px}
+.brand h1.wm{height:24px;line-height:0;color:var(--logo);margin:0}
 .brand h1.wm svg{height:100%;width:auto;display:block}
 .sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .pill{background:var(--card);border:0;box-shadow:0 1px 2px rgba(16,24,40,.06);border-radius:999px;padding:5px 14px;font-size:13px;color:var(--muted);white-space:nowrap}
@@ -1129,12 +1134,6 @@ const WORDMARK = `<svg viewBox="0 0 947.05 132.5" fill="currentColor" aria-hidde
 const LOGO = `<svg viewBox="0 0 172 172" fill="currentColor" aria-hidden="true"><g transform="translate(-14,-14) scale(1)"><path d="M125.80,100.00L155.90,116.00L169.14,114.72L186.00,100.00L169.14,85.28L155.90,84.00ZM122.34,112.90L140.41,141.81L152.52,147.32L174.48,143.00L167.24,121.82L156.41,114.09ZM112.90,122.34L114.09,156.41L121.82,167.24L143.00,174.48L147.32,152.52L141.81,140.41ZM100.00,125.80L84.00,155.90L85.28,169.14L100.00,186.00L114.72,169.14L116.00,155.90ZM87.10,122.34L58.19,140.41L52.68,152.52L57.00,174.48L78.18,167.24L85.91,156.41ZM77.66,112.90L43.59,114.09L32.76,121.82L25.52,143.00L47.48,147.32L59.59,141.81ZM74.20,100.00L44.10,84.00L30.86,85.28L14.00,100.00L30.86,114.72L44.10,116.00ZM77.66,87.10L59.59,58.19L47.48,52.68L25.52,57.00L32.76,78.18L43.59,85.91ZM87.10,77.66L85.91,43.59L78.18,32.76L57.00,25.52L52.68,47.48L58.19,59.59ZM100.00,74.20L116.00,44.10L114.72,30.86L100.00,14.00L85.28,30.86L84.00,44.10ZM112.90,77.66L141.81,59.59L147.32,47.48L143.00,25.52L121.82,32.76L114.09,43.59ZM122.34,87.10L156.41,85.91L167.24,78.18L174.48,57.00L152.52,52.68L140.41,58.19Z"/><circle cx="100" cy="100" r="15.996"/></g></svg>`;
 
 // آیکن‌های ساده (خطی)
-// راه‌های ارتباط با صندوق (پایین داشبورد)
-const CONTACT = {
-  bale: { handle: "@sadiqanidishan", url: "https://ble.ir/sadiqanidishan" },
-  email: "sadiqandishan@gmail.com",
-};
-
 const ICONS = {
   users: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.7"/><path d="M16.5 14.6c2.6.2 4.4 1.9 5 4.9"/></svg>',
   coins: '<svg viewBox="0 0 24 24"><ellipse cx="9" cy="6.5" rx="6" ry="2.8"/><path d="M3 6.5v4c0 1.5 2.7 2.8 6 2.8s6-1.3 6-2.8v-4"/><path d="M9 17.3c-3.3 0-6-1.3-6-2.8v-4"/><ellipse cx="15.5" cy="14" rx="5.5" ry="2.6"/><path d="M10 14v3.6c0 1.4 2.5 2.6 5.5 2.6s5.5-1.2 5.5-2.6V14"/></svg>',
@@ -1480,9 +1479,9 @@ ${REPORT_CSS}
 <header class="top">
   <div class="brand">
     <div class="logo">${LOGO}</div>
-    <div><div class="fund">داشبورد</div>${norm(r.fundName) === norm(WORDMARK_NAME)
+    ${norm(r.fundName) === norm(WORDMARK_NAME)
       ? `<h1 class="wm">${WORDMARK}<span class="sr">${esc(r.fundName)}</span></h1>`
-      : `<h1>${esc(r.fundName)}</h1>`}</div>
+      : `<h1>${esc(r.fundName)}</h1>`}
   </div>
   <div class="pill">تاریخ گزارش: <b>${upd}</b></div>
 </header>
