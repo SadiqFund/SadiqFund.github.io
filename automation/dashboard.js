@@ -767,7 +767,7 @@ function compute(data, req) {
       const reasons = [
         { key: "late", label: G.maxLateInstallments ? `بیش از ${fmtInt(G.maxLateInstallments)} قسط معوق` : "قسط معوق دارد", rule: G.maxLateInstallments ? `حداکثر ${fmtInt(G.maxLateInstallments)} قسط معوق` : "هیچ قسط معوق نداشته باشد" },
         { key: "history", label: `قسطی بیش از ${fmtInt(G.lateDaysLimit)} روز دیر در ${fmtInt(G.lateLookbackMonths)} ماه اخیر`, rule: `در ${fmtInt(G.lateLookbackMonths)} ماه اخیر هیچ قسطی را بیش از ${fmtInt(G.lateDaysLimit)} روز دیر نداده باشد` },
-        { key: "inactive", label: `بدون تراکنش در ${fmtInt(G.inactiveMonths)} ماه اخیر`, rule: `در ${fmtInt(G.inactiveMonths)} ماه اخیر دست‌کم یک تراکنش داشته باشد` },
+        { key: "inactive", label: `بدون پرداخت در ${fmtInt(G.inactiveMonths)} ماه اخیر`, rule: `در ${fmtInt(G.inactiveMonths)} ماه اخیر دست‌کم یک پرداخت داشته باشد: قسط، حق عضویت یا افزایش موجودی` },
         { key: "tenure", label: `کمتر از ${fmtInt(G.minTenureMonths)} ماه عضویت`, rule: `دست‌کم ${fmtInt(G.minTenureMonths)} ماه عضو باشد` },
         { key: "capital", label: `سرمایه‌ی کمتر از ${fmtMoney(G.minCapital, true)}`, rule: `سرمایه‌ی شخصی دست‌کم ${fmtMoney(G.minCapital, true)}` },
         { key: "debt", label: `مانده‌ی وام خودش بیش از ${fmtRatio(G.maxOwnDebtRatio)} برابر سرمایه`, rule: `مانده‌ی وام‌های خودش حداکثر ${fmtRatio(G.maxOwnDebtRatio)} برابر سرمایه‌اش` },
@@ -783,7 +783,10 @@ function compute(data, req) {
         const all = txBy.get(name) || [];
         const late = lateBy.get(name) || 0, n = load.get(name) || 0, delay = maxDelay(name);
         const mine = all.filter((t) => T[t.type] !== "loan" && T[t.type] !== "settle");
-        const first = all[0], lastMine = mine[mine.length - 1];
+        // «فعال بودن» با پرداخت‌های خود عضو سنجیده می‌شود: قسط، حق عضویت، افزایش موجودی.
+        // دریافت وام و تسویه با مدیر پرداخت او نیستند، و برداشت هم پول گرفتن است نه پرداخت.
+        const paid = all.filter((t) => ["repay", "fee", "deposit"].includes(T[t.type]));
+        const first = all[0], lastMine = paid[paid.length - 1];
         // برداشت از سرمایه دیگر شرط رد نیست؛ فقط برای یادداشت در کارت بررسی نگه داشته می‌شود
         const withdraw = mine.some((t) => T[t.type] === "withdraw" && t.jdn > ago(G.withdrawNoteMonths));
         const debt = activeBy.get(name) || 0;
@@ -799,7 +802,7 @@ function compute(data, req) {
         const myLoans = loansBy.get(name) || [];
         return {
           name: p.nameRaw, capital: p.capital, late, maxDelay: delay, guarantees: n, maxGuarantees: capOf(p.capital), withdraw,
-          tenureDays: first ? asOf - first.jdn : 0, lastTxDays: lastMine ? asOf - lastMine.jdn : null,
+          tenureDays: first ? asOf - first.jdn : 0, lastTxDays: lastMine ? asOf - lastMine.jdn : null, lastTxJdn: lastMine ? lastMine.jdn : null, lastTxType: lastMine ? T[lastMine.type] : null,
           loansN: myLoans.length, activeDebt: debt, activeLoansN: active.filter((l) => l.who === name).length,
           why, whyLabel: why ? labelOf[why] : null,
         };

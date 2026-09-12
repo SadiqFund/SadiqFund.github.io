@@ -79,7 +79,7 @@ async function sendGuarantors(r, plStatus) {
   const detail = {
     late: (a) => `${n(a.late)} قسط معوق`,
     history: (a) => `بیشترین دیرکرد ${days(a.maxDelay)}`,
-    inactive: (a) => (a.lastTxDays == null ? "هیچ تراکنشی ندارد" : `آخرین تراکنش ${days(a.lastTxDays)} پیش`),
+    inactive: (a) => (a.lastTxDays == null ? "هیچ پرداختی ندارد" : `آخرین پرداخت ${days(a.lastTxDays)} پیش از اکسل`),
     tenure: (a) => `${(a.tenureDays / 30.44).toLocaleString("fa-IR", { maximumFractionDigits: 1 })} ماه عضویت`,
     capital: (a) => `سرمایه ${money(a.capital)}`,
     debt: (a) => `مانده‌ی وام ${money(a.activeDebt)}، سرمایه ${money(a.capital)}`,
@@ -334,6 +334,11 @@ function plWhy(e) {
 
 // ---------- کارت بررسی هر درخواست تازه (فقط به کانال خصوصی مدیر)
 const dec = (x, d = 1) => x.toLocaleString("fa-IR", { maximumFractionDigits: d });
+// نام کوتاه نوع تراکنش برای کارت بررسی
+const TX_SHORT = { repay: "قسط", fee: "حق عضویت", deposit: "افزایش موجودی" };
+// «۶ شهریور»؛ اگر مال سال دیگری باشد، سال هم می‌آید
+const txDay = (jdn, asOf) => (D.fmtDate(jdn).split(" ").pop() === D.fmtDate(asOf).split(" ").pop()
+  ? D.fmtDate(jdn).split(" ").slice(0, 2).join(" ") : D.fmtDate(jdn));
 const monthsOf = (days) => dec(days / 30.44);
 function reviewCard(r, x) {
   const R = r.review;
@@ -348,13 +353,14 @@ function reviewCard(r, x) {
   if (amt || x.count) lines.push(`درخواست: ${amt || "مبلغ نامعلوم"}${x.count ? ` در ${D.fmtInt(x.count)} قسط` : ""}` +
     (a && x.amount > 0 && a.capital > 0 ? ` (${dec(x.amount / a.capital)} برابر سرمایه‌اش)` : ""));
   if (a) {
-    lines.push("", `وضع متقاضی (اکسل ${D.fmtDate(r.asOf)}):`);
+    lines.push("", `وضع متقاضی (بر اساس اکسل ${D.fmtDate(r.asOf)}):`);
     lines.push(`• سرمایه: ${D.fmtMoney(a.capital, true)}`);
     lines.push(`• عضویت: ${monthsOf(a.tenureDays)} ماه`);
     lines.push(`• قسط معوق: ${a.late ? `⚠️ ${D.fmtInt(a.late)} قسط` : "ندارد"}`);
     lines.push(`• بیشترین تأخیر قسط در ${D.fmtInt(D.CONFIG.guarantor.lateLookbackMonths)} ماه اخیر: ${a.loansN ? `${a.maxDelay > D.CONFIG.guarantor.lateDaysLimit ? "⚠️ " : ""}${D.fmtInt(a.maxDelay)} روز` : "وامی نگرفته"}`);
     lines.push(`• وام در جریان: ${a.activeLoansN ? `${D.fmtInt(a.activeLoansN)} وام، مانده ${D.fmtMoney(a.activeDebt, true)}` : "ندارد"}${a.loansN ? ` (تا حالا ${D.fmtInt(a.loansN)} وام)` : ""}`);
-    lines.push(`• آخرین تراکنش: ${a.lastTxDays == null ? "⚠️ ندارد" : a.lastTxDays <= 0 ? "همان روز اکسل" : `${D.fmtInt(a.lastTxDays)} روز پیش از اکسل`}`);
+    // آخرین حرکت مالی خود عضو (دریافت وام و تسویه با مدیر حساب نمی‌شود)
+    lines.push(`• آخرین تراکنش پرداختی: ${a.lastTxDays == null ? "⚠️ ندارد" : `${txDay(a.lastTxJdn, r.asOf)} (${TX_SHORT[a.lastTxType] || "پرداخت"})`}`);
     // برداشت از سرمایه دیگر شرط رد نیست؛ فقط یادداشت اطلاعاتی است
     if (a.withdraw) lines.push(`• ℹ️ در ${D.fmtInt(D.CONFIG.guarantor.withdrawNoteMonths)} ماه اخیر از سرمایه‌اش برداشت کرده`);
   }
