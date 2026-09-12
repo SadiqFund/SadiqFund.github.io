@@ -6,7 +6,7 @@ name: Monthly email
 
 on:
   schedule:
-    - cron: "30 5 * * *" # 05:30 UTC = ۹:۰۰ صبح تهران
+    - cron: "35 5 * * *" # 05:35 UTC = ۹:۰۵ صبح تهران (چند دقیقه فاصله از اجرای داشبورد)
   workflow_dispatch:
     inputs:
       mode:
@@ -55,14 +55,24 @@ jobs:
           IGNORE_DATE: ${{ inputs.ignore_date || 'false' }}
         run: node send-email.js
 
+      # یادداشت اینکه ایمیل این ماه رفته است. در اجرای آزمایشیِ دستی این فایل ساخته نمی‌شود،
+      # پس اول وجودش چک می‌شود. اگر workflow داشبورد هم‌زمان push کرده باشد، یک بار rebase و دوباره تلاش.
       - name: Remember
         run: |
+          if [ ! -f automation/email-state.json ]; then
+            echo "[email] no state file to commit (test run)."
+            exit 0
+          fi
           git config user.name "dashboard-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add automation/email-state.json
           if git diff --cached --quiet; then
             echo "[email] nothing to commit."
-          else
-            git commit -m "ایمیل ماهانه"
-            git push
+            exit 0
           fi
+          git commit -m "ایمیل ماهانه"
+          git push || {
+            echo "[email] push rejected; rebasing and retrying."
+            git pull --rebase --autostash
+            git push
+          }
