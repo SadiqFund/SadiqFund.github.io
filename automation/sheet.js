@@ -18,30 +18,57 @@ const ON = !!(URL_ && TOKEN);
 
 const log = (m) => console.log(`[sheet] ${m}`); // فقط پیام کلی، هرگز داده
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const TRIES = 3;
+const WAIT = [1500, 4000]; // فاصله‌ی تلاش‌ها
+const faN = (n) => String(n).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]);
+
+// یک تماس با سند.
+//
+// چرا تلاش دوباره؟ Apps Script پاسخ را با یک redirect به script.googleusercontent.com می‌دهد و
+// همان مرحله گاهی بی‌دلیل ۴۰۴ (یا صفحه‌ی HTML) برمی‌گرداند — گاهی برای یک تماس و نه بقیه، در
+// همان اجرا و با همان نشانی. این خطا گذراست، پس تا سه بار تلاش می‌کنیم.
+//
+// تلاش دوباره امن است چون هر سه نوشتن «یک‌بار-اثر»اند: تاریخچه با تاریخ گزارش همان ردیف را
+// به‌روز می‌کند، و وام و صف با «نام + تاریخ» تکراری نمی‌سازند. پس اگر تماس اول در واقع نوشته
+// باشد و فقط پاسخش گم شده باشد، تلاش دوم چیزی دوباره اضافه نمی‌کند.
 async function call(action, extra) {
   if (!ON) return null;
-  const res = await fetch(URL_, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ token: TOKEN, action, ...(extra || {}) }),
-    redirect: "follow", // Apps Script یک بار به script.googleusercontent.com هدایت می‌کند
-  });
-  const text = await res.text();
-  let j;
-  try { j = JSON.parse(text); } catch (e) {
-    // اگر HTML برگشت، یعنی نشانی یا دسترسی Web app درست نیست. پیام را تا جای ممکن دقیق می‌کنیم.
-    const why = res.status === 404
-      ? "نشانی Web app زنده نیست: یا آن Deployment پاک/بایگانی شده، یا SHEET_URL نشانی یک Deployment دیگر است. " +
-        "در Apps Script: Deploy ← Manage deployments ← روی Deployment فعال مداد بزنید ← Version: New version ← Deploy، " +
-        "بعد همان Web app URL را در Secret به نام SHEET_URL بگذارید. " +
-        "آزمون سریع: نشانی SHEET_URL را در مرورگر باز کنید؛ اگر درست باشد باید {\"ok\":true,\"alive\":true,…} ببینید."
-      : res.status === 403 || res.status === 401
-        ? "دسترسی Deployment روی «Anyone» نیست."
-        : "Deployment را روی «Anyone» تنظیم کرده‌اید؟";
-    throw new Error(`پاسخ سند JSON نبود (${res.status}). ${why}`);
+  const body = JSON.stringify({ token: TOKEN, action, ...(extra || {}) });
+  let last = null;
+  for (let i = 0; i < TRIES; i++) {
+    if (i) await sleep(WAIT[i - 1] || 4000);
+    let res, text;
+    try {
+      res = await fetch(URL_, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+        redirect: "follow", // Apps Script یک بار به script.googleusercontent.com هدایت می‌کند
+      });
+      text = await res.text();
+    } catch (e) { last = { status: 0, msg: "به سند وصل نشد" }; continue; } // شبکه؛ دوباره امتحان می‌کنیم
+    let j = null;
+    try { j = JSON.parse(text); } catch (e) { j = null; }
+    if (j) {
+      if (j.error) throw new Error(j.error); // پاسخ واقعی اسکریپت؛ تلاش دوباره فایده ندارد
+      if (i) log(`call "${action}" succeeded on attempt ${i + 1}.`);
+      return j;
+    }
+    last = { status: res.status, msg: null };
+    // ۴۰۴ و خطاهای سرور گذرا هستند؛ ۴۰۱/۴۰۳ یعنی دسترسی، تلاش دوباره جوابش را عوض نمی‌کند
+    if (res.status === 401 || res.status === 403) break;
+    log(`call "${action}" got ${res.status} instead of JSON (attempt ${i + 1} of ${TRIES}).`);
   }
-  if (j.error) throw new Error(j.error);
-  return j;
+  const s = last ? last.status : 0;
+  const why = s === 401 || s === 403
+    ? "دسترسی Deployment روی «Anyone» نیست."
+    : s === 404
+      ? `بعد از ${faN(TRIES)} تلاش هم پاسخ نداد. اگر فقط گاهی پیش می‌آید، ایراد گذرای خود گوگل است و اجرای بعدی درست می‌شود. ` +
+        "اگر همیشه است، نشانی Web app زنده نیست: نشانی SHEET_URL را در مرورگر باز کنید؛ اگر درست باشد باید {\"ok\":true,\"alive\":true,…} ببینید. " +
+        "وگرنه در Apps Script: Deploy ← Manage deployments ← مداد روی Deployment فعال ← Version: New version ← Deploy، و همان نشانی را در Secret به نام SHEET_URL بگذارید."
+      : "Deployment را روی «Anyone» تنظیم کرده‌اید؟";
+  throw new Error(`پاسخ سند JSON نبود (${s}). ${why}`);
 }
 
 // نام ماه‌های شمسی برای ساختن «۱۴۰۵/۰۶/۲۰» از jdn
