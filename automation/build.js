@@ -429,18 +429,24 @@ async function writeToSheet(r, fundWb) {
   catch (e) { problems.push("تاریخچه: " + e.message); }
   try {
     const list = (r.review && r.review.list) || [];
-    const rows = list.map((x) => {
-      const d = D.J.d2j(x.jdn);
-      const p = r.review.rosterFind ? r.review.rosterFind(x.mobile, x.name) : null;
-      return {
-        name: x.nameRaw || x.name,
-        code: p && p.code ? p.code : "",
-        date: `${d.jy}/${String(d.jm).padStart(2, "0")}/${String(d.jd).padStart(2, "0")}`,
-        amount: x.amount || "",
-        count: x.count || "",
-        guarantor: x.gNameRaw || "",
-      };
-    }).filter((x) => x.name);
+    const rows = list
+      .filter((x) => (x.nameRaw || x.name) && Number.isFinite(x.jdn) && x.jdn > 0) // بدون تاریخ خوانا، ردیف ساخته نمی‌شود
+      .sort((a, b) => a.jdn - b.jdn) // به ترتیب تاریخ اضافه شوند، نه به‌هم‌ریخته
+      .map((x) => {
+        const d = D.J.d2j(x.jdn);
+        const p = r.review.rosterFind ? r.review.rosterFind(x.mobile, x.name) : null;
+        const g = x.gNameRaw || "";
+        return {
+          name: x.nameRaw || x.name,
+          code: p && p.code ? p.code : "",
+          date: `${d.jy}/${String(d.jm).padStart(2, "0")}/${String(d.jd).padStart(2, "0")}`,
+          amount: x.amount || "",
+          count: x.count || "",
+          guarantor: g,
+          // درخواست‌های قدیمی‌تر از افزوده شدن سؤال ضامن به فرم، ضامن ندارند
+          note: g ? "از فرم پُرس‌لاین" : "از فرم پُرس‌لاین — ضامن در فرم ثبت نشده",
+        };
+      });
     await SHEET.queue(D, rows);
   } catch (e) { problems.push("صف وام: " + e.message); }
   if (problems.length) await notify("⚠️ نوشتن در سند گوگل کامل نشد:\n" + problems.map((x) => "• " + x).join("\n"));
