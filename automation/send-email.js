@@ -28,6 +28,10 @@ const TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const NOTIFY_ID = (process.env.NOTIFY_CHAT_ID || process.env.TELEGRAM_CHAT_ID || "").trim();
 const API = (process.env.TELEGRAM_API_BASE || "https://api.telegram.org").replace(/\/$/, "");
 const SITE_URL = (process.env.SITE_URL || "").trim().replace(/\/$/, "");
+// نشانی صفحه‌ی اجرای همین workflow، برای دکمه‌ی پیام تلگرام (گیت‌هاب خودش این دو را می‌دهد)
+const REPO = (process.env.GITHUB_REPOSITORY || "").trim();
+const SERVER = (process.env.GITHUB_SERVER_URL || "https://github.com").replace(/\/$/, "");
+const RUN_URL = REPO ? `${SERVER}/${REPO}/actions/workflows/monthly-email.yml` : "";
 
 const GMAIL_USER = (process.env.GMAIL_USER || "").trim();
 const GMAIL_PASS = (process.env.GMAIL_APP_PASSWORD || "").replace(/\s+/g, ""); // App Password گوگل با فاصله نشان داده می‌شود
@@ -50,9 +54,16 @@ async function tg(method, params) {
   if (!j.ok) throw new Error(`Telegram ${method} failed (${res.status}${j.description ? ": " + j.description : ""})`);
   return j.result;
 }
-async function notify(text) {
+async function notify(text, buttonUrl, buttonText) {
   if (!TOKEN || !NOTIFY_ID) return;
-  try { await tg("sendMessage", { chat_id: NOTIFY_ID, text, disable_web_page_preview: true }); } catch (e) { log("notify failed."); }
+  const msg = { chat_id: NOTIFY_ID, text, disable_web_page_preview: true };
+  if (buttonUrl) msg.reply_markup = { inline_keyboard: [[{ text: buttonText, url: buttonUrl }]] };
+  try { await tg("sendMessage", msg); }
+  catch (e) { // اگر دکمه به هر دلیل قبول نشد، دست‌کم خود پیام برود
+    if (!msg.reply_markup) return log("notify failed.");
+    delete msg.reply_markup;
+    try { await tg("sendMessage", msg); } catch (e2) { log("notify failed."); }
+  }
 }
 async function download(fileId) {
   const f = await tg("getFile", { file_id: fileId });
@@ -69,7 +80,6 @@ function todayJalali() {
   const p = Object.fromEntries(f.formatToParts(new Date()).map((x) => [x.type, x.value]));
   return { jy: Number(String(p.year).replace(/\D/g, "")), jm: Number(p.month), jd: Number(p.day) };
 }
-const MONTHS = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
 
 // فهرست ایمیل اعضا: هر نشانی در یک خط. خط‌های خالی، خط‌های با # و متن‌های اضافه نادیده گرفته می‌شوند.
 function readRecipients(text) {
@@ -145,13 +155,15 @@ async function main() {
 
   if (MODE === "test") {
     await notify(
-      `📧 نسخه‌ی آزمایشی ایمیل ${MONTHS[today.jm - 1]} به ایمیل صندوق فرستاده شد.` +
+      `📧 نسخه‌ی آزمایشی ایمیل به ایمیل صندوق فرستاده شد.` +
       `\nگزارش تا ${D.fmtDate(r.asOf)}.${stale}` +
-      `\n\nاگر خوب بود، برای فرستادن به ${D.fmtNum(all.length)} عضو:` +
-      `\nتب Actions ← Monthly email ← Run workflow ← گزینه‌ی all`
+      (RUN_URL
+        ? `\n\nاگر خوب بود، دکمه‌ی زیر را بزنید و در صفحه‌ای که باز می‌شود:\nRun workflow ← mode = all ← Run workflow`
+        : `\n\nاگر خوب بود، برای فرستادن به اعضا:\nتب Actions ← Monthly email ← Run workflow ← گزینه‌ی all`),
+      RUN_URL, `📨 فرستادن به ${D.fmtNum(all.length)} عضو`
     );
   } else {
-    await notify(`✅ ایمیل ${MONTHS[today.jm - 1]} برای ${D.fmtNum(bcc.length)} عضو فرستاده شد.\nگزارش تا ${D.fmtDate(r.asOf)}.${stale}`);
+    await notify(`✅ ایمیل برای ${D.fmtNum(bcc.length)} عضو فرستاده شد.\nگزارش تا ${D.fmtDate(r.asOf)}.${stale}`);
   }
   log("done.");
 }
