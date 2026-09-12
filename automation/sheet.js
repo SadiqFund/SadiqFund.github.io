@@ -29,8 +29,16 @@ async function call(action, extra) {
   const text = await res.text();
   let j;
   try { j = JSON.parse(text); } catch (e) {
-    // اگر HTML برگشت، یعنی نشانی یا دسترسی Web app درست نیست
-    throw new Error(`پاسخ سند JSON نبود (${res.status}). Deployment را روی «Anyone» تنظیم کرده‌اید؟`);
+    // اگر HTML برگشت، یعنی نشانی یا دسترسی Web app درست نیست. پیام را تا جای ممکن دقیق می‌کنیم.
+    const why = res.status === 404
+      ? "نشانی Web app زنده نیست: یا آن Deployment پاک/بایگانی شده، یا SHEET_URL نشانی یک Deployment دیگر است. " +
+        "در Apps Script: Deploy ← Manage deployments ← روی Deployment فعال مداد بزنید ← Version: New version ← Deploy، " +
+        "بعد همان Web app URL را در Secret به نام SHEET_URL بگذارید. " +
+        "آزمون سریع: نشانی SHEET_URL را در مرورگر باز کنید؛ اگر درست باشد باید {\"ok\":true,\"alive\":true,…} ببینید."
+      : res.status === 403 || res.status === 401
+        ? "دسترسی Deployment روی «Anyone» نیست."
+        : "Deployment را روی «Anyone» تنظیم کرده‌اید؟";
+    throw new Error(`پاسخ سند JSON نبود (${res.status}). ${why}`);
   }
   if (j.error) throw new Error(j.error);
   return j;
