@@ -427,10 +427,11 @@ let state = {};
 // نوشتن در سند گوگل: یک ردیف تاریخچه، و درخواست‌های تازه‌ی فرم در تب «صف وام».
 // هر خطایی این‌جا فقط یک پیام تلگرام است؛ داشبورد منتشرشده دست‌نخورده می‌ماند.
 const jDate = (jdn) => { const d = D.J.d2j(jdn); return `${d.jy}/${String(d.jm).padStart(2, "0")}/${String(d.jd).padStart(2, "0")}`; };
-async function writeToSheet(r, fundWb) {
+async function writeToSheet(r, fundWb, loud) {
   if (!SHEET.ON) return;
   const problems = [];
-  try { await SHEET.history(D, r, D.parseWorkbook(fundWb).header); }
+  const done = []; // خلاصه‌ی کوتاه برای اجرای دستی: تا معلوم باشد کار انجام شده، حتی اگر چیزی اضافه نشود
+  try { const h = await SHEET.history(D, r, D.parseWorkbook(fundWb).header); done.push(`تاریخچه: ${h && h.action === "updated" ? "ردیف امروز به‌روز شد" : "یک ردیف ثبت شد"}`); }
   catch (e) { problems.push("تاریخچه: " + e.message); }
   // دفتر وام‌ها: وام‌های تازه‌ی اکسل صندوق، با ضامنی که از فرم پُرس‌لاین جور شده
   try {
@@ -446,7 +447,8 @@ async function writeToSheet(r, fundWb) {
         miss.map((x) => `• ${x.name} (${x.date})`).join("\n") +
         "\nیعنی متقاضی فرم پُرس‌لاین پر نکرده یا ضامنی که نوشته با هیچ عضوی جور نشد. می‌توانید همان سلول را دستی پر کنید؛ بعد از آن ربات دیگر به آن دست نمی‌زند.");
       if (say.length) await notify(say.join("\n\n"));
-    }
+      done.push(`دفتر وام‌ها: ${j.added ? `${D.fmtInt(j.added)} ردیف تازه` : "چیزی برای اضافه کردن نبود"}`);
+    } else done.push("دفتر وام‌ها: چیزی برای اضافه کردن نبود");
   } catch (e) { problems.push("دفتر وام‌ها: " + e.message); }
   try {
     const list = (r.review && r.review.list) || [];
@@ -468,9 +470,12 @@ async function writeToSheet(r, fundWb) {
           note: g ? "از فرم پُرس‌لاین" : "از فرم پُرس‌لاین — ضامن در فرم ثبت نشده",
         };
       });
-    await SHEET.queue(D, rows);
+    const q = await SHEET.queue(D, rows);
+    done.push(`صف وام: ${q && q.added ? `${D.fmtInt(q.added)} ردیف تازه` : "چیزی برای اضافه کردن نبود"}`);
   } catch (e) { problems.push("صف وام: " + e.message); }
   if (problems.length) await notify("⚠️ نوشتن در سند گوگل کامل نشد:\n" + problems.map((x) => "• " + x).join("\n"));
+  // اجرای دستی: یک خط تأیید، تا سکوت با خرابی اشتباه گرفته نشود
+  else if (loud && done.length) await notify("📗 سند گوگل به‌روز شد.\n" + done.map((x) => "• " + x).join("\n"));
 }
 
 async function main() {
@@ -694,7 +699,7 @@ async function main() {
   }
   await sendReviews(r);
   writeState(state);
-  await writeToSheet(r, fundWb);
+  await writeToSheet(r, fundWb, loud);
   // اول فرم پُرس‌لاین به‌روز می‌شود تا وضعیتش در خلاصه‌ی گزارش ضامن‌ها بیاید
   const plStatus = r.guarantors ? await updatePorsline(r, !loud) : null;
   if (sendG) await sendGuarantors(r, plStatus && plStatus.text);
