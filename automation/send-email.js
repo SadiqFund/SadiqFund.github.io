@@ -118,7 +118,8 @@ async function main() {
 
   const html = D.renderEmail(r, { siteUrl: SITE_URL });
   const text = D.renderEmailText(r, { siteUrl: SITE_URL });
-  const subject = `${MODE === "test" ? "[آزمایشی] " : ""}گزارش ${MONTHS[today.jm - 1]} ${D.fmtNum(today.jy)} — ${r.fundName}`;
+  // موضوع از تاریخ گزارش ساخته می‌شود، نه از تقویم امروز: ایمیلِ اول مهر خلاصه‌ی شهریور را دارد
+  const subject = `${MODE === "test" ? "[آزمایشی] " : ""}${r.fundName} — گزارش تا ${D.fmtDate(r.asOf)}`;
 
   const all = readRecipients(process.env.MEMBER_EMAILS);
   const bcc = MODE === "all" ? all.filter((e) => e !== GMAIL_USER.toLowerCase()) : [];

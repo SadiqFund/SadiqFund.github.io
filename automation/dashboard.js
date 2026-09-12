@@ -1604,6 +1604,8 @@ function renderEmail(r, o) {
   const mo = r.month;
   const cm = r.months[r.months.length - 1] || {};
   const curColl = (cm.repay || 0) + (cm.fee || 0) + (cm.deposit || 0) + (cm.other || 0);
+  // نام ماه از خود داده می‌آید؛ ایمیل اولِ مهر، خلاصه‌ی شهریور را نشان می‌دهد و باید همان را بنویسد
+  const moName = MONTHS[J.d2j(mo.start).jm - 1];
 
   // کارت‌ها با inline-block چیده می‌شوند، نه با ستون جدول: در عرض کم خودشان زیر هم می‌آیند
   // بدون اینکه به media query نیاز باشد (Gmail هنگام چسباندن، بخش <style> را دور می‌ریزد).
@@ -1630,8 +1632,8 @@ function renderEmail(r, o) {
       <div dir="rtl" style="font-size:0;direction:rtl;text-align:center;">${
         cell("دارایی کل صندوق", money(r.capital), `${fmtInt(r.memberCount)} عضو فعال`)
       }${cell("وام‌های در جریان", `${fmtInt(r.active.n)} وام`, `مانده ${money(r.active.remaining)}`)
-      }${cell("وام‌های این ماه", mo.loanN ? `${fmtInt(mo.loanN)} وام` : "—", mo.loanN ? `به ارزش ${money(mo.loanAmt)}` : "تا امروز وامی پرداخت نشده")
-      }${cell("وصولی این ماه", curColl ? money(curColl) : "—", mo.due ? `${fmtInt(mo.paid)} از ${fmtInt(mo.due)} قسط سررسیدشده پرداخت شده` : "هنوز قسطی سررسید نشده")}</div>
+      }${cell(`وام‌های ${moName}`, mo.loanN ? `${fmtInt(mo.loanN)} وام` : "—", mo.loanN ? `به ارزش ${money(mo.loanAmt)}` : `در ${moName} وامی پرداخت نشده`)
+      }${cell(`وصولی ${moName}`, curColl ? money(curColl) : "—", mo.due ? `${fmtInt(mo.paid)} از ${fmtInt(mo.due)} قسط سررسیدشده پرداخت شده` : `در ${moName} قسطی سررسید نشده`)}</div>
     </td></tr>`);
   if (site) rows.push(`<tr><td style="padding:14px 24px 4px;">${btn("مشاهده داشبورد صندوق", site, true)}</td></tr>
     <tr><td dir="rtl" style="padding:0 24px 8px;font-family:${E.font};font-size:12px;color:${E.muted};line-height:1.8;direction:rtl;text-align:center;">
@@ -1680,13 +1682,14 @@ function renderEmailText(r, o) {
   const mo = r.month, upd = fmtDate(r.asOf);
   const cm = r.months[r.months.length - 1] || {};
   const curColl = (cm.repay || 0) + (cm.fee || 0) + (cm.deposit || 0) + (cm.other || 0);
+  const moName = MONTHS[J.d2j(mo.start).jm - 1];
   return [
     `${r.fundName} — گزارش تا ${upd}`,
     o.note || "",
     `دارایی کل: ${fmtMoney(r.capital, true)} (${fmtInt(r.memberCount)} عضو فعال)`,
     `وام‌های در جریان: ${fmtInt(r.active.n)} وام، مانده ${fmtMoney(r.active.remaining, true)}`,
-    mo.loanN ? `وام‌های این ماه: ${fmtInt(mo.loanN)} وام به ارزش ${fmtMoney(mo.loanAmt, true)}` : "این ماه هنوز وامی پرداخت نشده است.",
-    curColl ? `وصولی این ماه تا امروز: ${fmtMoney(curColl, true)}` + (mo.due ? `؛ ${fmtInt(mo.paid)} از ${fmtInt(mo.due)} قسط سررسیدشده پرداخت شده` : "") : "",
+    mo.loanN ? `وام‌های ${moName}: ${fmtInt(mo.loanN)} وام به ارزش ${fmtMoney(mo.loanAmt, true)}` : `در ${moName} وامی پرداخت نشده است.`,
+    curColl ? `وصولی ${moName}: ${fmtMoney(curColl, true)}` + (mo.due ? `؛ ${fmtInt(mo.paid)} از ${fmtInt(mo.due)} قسط سررسیدشده پرداخت شده` : "") : "",
     o.siteUrl ? `داشبورد: ${o.siteUrl}` : "",
     `کانال بله: ${CONTACT.bale.handle} (${CONTACT.bale.url})`,
     `ایمیل: ${CONTACT.email}`,
