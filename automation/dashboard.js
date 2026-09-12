@@ -918,10 +918,10 @@ const THEME = {
 const REPORT_CSS = `
 :root{--bg:${THEME.bg};--card:${THEME.card};--border:${THEME.border};--ink:${THEME.text};--muted:${THEME.muted};--primary:${THEME.primary};--primary-dark:${THEME.primaryDark};--primary-soft:${THEME.primarySoft};--accent:${THEME.accent};
 --good:${THEME.good};--ahead:${THEME.ahead};--late1:${THEME.late1};--late2:${THEME.late2};--s-repay:${THEME.sRepay};--s-fee:${THEME.sFee};--s-deposit:${THEME.sDeposit};--s-other:${THEME.sOther};--r:${THEME.radius};--hero:${THEME.heroGradient};--shadow:${THEME.shadow};
---soft:#F6F8FC;--grid:#E7ECF3;--grid2:#C8D2E0;--selbg:rgba(0,73,232,.07);--icobg:#E6EEFF;--track:#DCE8FE;--chip:#fff;color-scheme:light}
+--soft:#F6F8FC;--grid:#E7ECF3;--grid2:#C8D2E0;--selbg:rgba(0,73,232,.07);--icobg:#E6EEFF;--track:#DCE8FE;--chip:#fff;--logo:#0A1A4F;color-scheme:light}
 /* حالت تیره: وقتی گوشی یا رایانه روی حالت شب است */
 @media (prefers-color-scheme:dark){:root{--bg:#0B1220;--card:#131C2E;--border:#243049;--ink:#E7ECF5;--muted:#93A1B8;--primary:#4F86FF;--primary-dark:#2F6BF0;--good:#4F86FF;--ahead:#8FB4FF;--late1:#F0A3AC;--late2:#FF5A67;--s-repay:#4F86FF;--s-fee:#22B8B2;--s-deposit:#E88A1A;
---soft:#1A2439;--grid:#1F2A40;--grid2:#34425F;--selbg:rgba(79,134,255,.13);--icobg:#1E2A44;--track:#26324C;--chip:#131C2E;--shadow:none;color-scheme:dark}
+--soft:#1A2439;--grid:#1F2A40;--grid2:#34425F;--selbg:rgba(79,134,255,.13);--icobg:#1E2A44;--track:#26324C;--chip:#131C2E;--shadow:none;--logo:#E7ECF5;color-scheme:dark}
 .hero{box-shadow:0 0 0 1px rgba(255,255,255,.06)}.tip{background:#E7ECF5;color:#0B1220}.pill{box-shadow:none}}
 *{box-sizing:border-box;margin:0;padding:0}
 html{background:var(--bg);-webkit-text-size-adjust:100%}
@@ -929,8 +929,8 @@ body{font-family:"Dana FaNum",Tahoma,sans-serif;color:var(--ink);background:var(
 .page{max-width:1120px;margin:0 auto;padding:0 16px 32px}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:18px 0 16px}
 .brand{display:flex;align-items:center;gap:12px}
-.logo{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--primary-dark),var(--primary));display:grid;place-items:center;flex:none}
-.logo svg{width:24px;height:24px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.logo{width:46px;height:46px;display:grid;place-items:center;flex:none;color:var(--logo)}
+.logo svg{width:100%;height:100%;display:block}
 .brand .fund{font-size:13px;color:var(--muted);line-height:1.5}
 .brand h1{font-size:20px;font-weight:800;line-height:1.4;color:var(--ink)}
 .pill{background:var(--card);border:0;box-shadow:0 1px 2px rgba(16,24,40,.06);border-radius:999px;padding:5px 14px;font-size:13px;color:var(--muted);white-space:nowrap}
@@ -1112,6 +1112,9 @@ footer{padding:20px 4px 0;font-size:12px;color:var(--muted);text-align:center}
 .anim .in:not(.done) .sbar i{animation:growx 1.2s cubic-bezier(.22,.61,.36,1) both;animation-delay:calc(var(--i,0)*150ms)}
 .anim .in:not(.done) .rp{animation:ringin 1.5s cubic-bezier(.25,.1,.25,1) both}
 `;
+
+// نشان صندوق (بازرسم‌شده از لوگوی صندوق؛ رنگش را از محیط می‌گیرد)
+const LOGO = `<svg viewBox="0 0 172 172" fill="currentColor" aria-hidden="true"><g transform="translate(-14,-14) scale(1)"><path d="M125.80,100.00L155.90,116.00L169.14,114.72L186.00,100.00L169.14,85.28L155.90,84.00ZM122.34,112.90L140.41,141.81L152.52,147.32L174.48,143.00L167.24,121.82L156.41,114.09ZM112.90,122.34L114.09,156.41L121.82,167.24L143.00,174.48L147.32,152.52L141.81,140.41ZM100.00,125.80L84.00,155.90L85.28,169.14L100.00,186.00L114.72,169.14L116.00,155.90ZM87.10,122.34L58.19,140.41L52.68,152.52L57.00,174.48L78.18,167.24L85.91,156.41ZM77.66,112.90L43.59,114.09L32.76,121.82L25.52,143.00L47.48,147.32L59.59,141.81ZM74.20,100.00L44.10,84.00L30.86,85.28L14.00,100.00L30.86,114.72L44.10,116.00ZM77.66,87.10L59.59,58.19L47.48,52.68L25.52,57.00L32.76,78.18L43.59,85.91ZM87.10,77.66L85.91,43.59L78.18,32.76L57.00,25.52L52.68,47.48L58.19,59.59ZM100.00,74.20L116.00,44.10L114.72,30.86L100.00,14.00L85.28,30.86L84.00,44.10ZM112.90,77.66L141.81,59.59L147.32,47.48L143.00,25.52L121.82,32.76L114.09,43.59ZM122.34,87.10L156.41,85.91L167.24,78.18L174.48,57.00L152.52,52.68L140.41,58.19Z"/><circle cx="100" cy="100" r="15.996"/></g></svg>`;
 
 // آیکن‌های ساده (خطی)
 const ICONS = {
@@ -1416,6 +1419,9 @@ function renderReport(r, fonts) {
     return `<span class="gbadge">${pct >= 0 ? "▲" : "▼"} <b>${fmtInt(Math.abs(pct))}٪</b> ${pct >= 0 ? "رشد" : "کاهش"} در ۱۲ ماه اخیر</span>`;
   })();
 
+  // نشانی سایت برای تصویر پیش‌نمایش لینک و آیکن گوشی (در خودکارساز از SITE_URL می‌آید)
+  const SITE = (typeof SITE_URL === "string" ? SITE_URL : (typeof process !== "undefined" && process.env && process.env.SITE_URL) || "").replace(/\/$/, "");
+
   // پیش‌نمایش لینک (تلگرام و …): عنوان + یک خط خلاصه
   const ogDesc = `دارایی کل: ${fmtMoney(r.capital, true)}، به‌روز تا ${upd}`;
 
@@ -1427,6 +1433,12 @@ function renderReport(r, fonts) {
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="${THEME.primary}">
 <meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${'0 0 172 172'}" fill="#0A1A4F">${'<g transform="translate(-14,-14) scale(1)"><path d="M125.80,100.00L155.90,116.00L169.14,114.72L186.00,100.00L169.14,85.28L155.90,84.00ZM122.34,112.90L140.41,141.81L152.52,147.32L174.48,143.00L167.24,121.82L156.41,114.09ZM112.90,122.34L114.09,156.41L121.82,167.24L143.00,174.48L147.32,152.52L141.81,140.41ZM100.00,125.80L84.00,155.90L85.28,169.14L100.00,186.00L114.72,169.14L116.00,155.90ZM87.10,122.34L58.19,140.41L52.68,152.52L57.00,174.48L78.18,167.24L85.91,156.41ZM77.66,112.90L43.59,114.09L32.76,121.82L25.52,143.00L47.48,147.32L59.59,141.81ZM74.20,100.00L44.10,84.00L30.86,85.28L14.00,100.00L30.86,114.72L44.10,116.00ZM77.66,87.10L59.59,58.19L47.48,52.68L25.52,57.00L32.76,78.18L43.59,85.91ZM87.10,77.66L85.91,43.59L78.18,32.76L57.00,25.52L52.68,47.48L58.19,59.59ZM100.00,74.20L116.00,44.10L114.72,30.86L100.00,14.00L85.28,30.86L84.00,44.10ZM112.90,77.66L141.81,59.59L147.32,47.48L143.00,25.52L121.82,32.76L114.09,43.59ZM122.34,87.10L156.41,85.91L167.24,78.18L174.48,57.00L152.52,52.68L140.41,58.19Z"/><circle cx="100" cy="100" r="15.996"/></g>'}</svg>`)}">
+${SITE ? `<link rel="apple-touch-icon" href="${SITE}/icon-180.png">
+<meta property="og:image" content="${SITE}/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="${SITE}/og.png">` : ""}
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(ogDesc)}">
 <meta property="og:type" content="website">
@@ -1434,7 +1446,7 @@ function renderReport(r, fonts) {
 <meta property="og:site_name" content="${esc(r.fundName)}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(ogDesc)}">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="${SITE ? "summary_large_image" : "summary"}">
 <script>if(!(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches))document.documentElement.classList.add("anim")<\/script>
 <style>
 /* Dana FaNum © fontiran.com — استفاده با مجوز وب مدیر صندوق */
@@ -1446,7 +1458,7 @@ ${REPORT_CSS}
 <div class="page">
 <header class="top">
   <div class="brand">
-    <div class="logo" aria-hidden="true">${ICONS.wallet}</div>
+    <div class="logo">${LOGO}</div>
     <div><div class="fund">داشبورد صندوق</div><h1>${esc(r.fundName)}</h1></div>
   </div>
   <div class="pill">تاریخ گزارش: <b>${upd}</b></div>
