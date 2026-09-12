@@ -26,7 +26,11 @@ const CHAT_ID = (process.env.TELEGRAM_CHAT_ID || "").trim(); // شناسه‌ی 
 const NOTIFY_ID = (process.env.NOTIFY_CHAT_ID || "").trim() || CHAT_ID; // پیام نتیجه به کجا برود
 const SITE_URL = (process.env.SITE_URL || "").trim();
 const API = (process.env.TELEGRAM_API_BASE || "https://api.telegram.org").replace(/\/$/, "");
-const FORCE = process.env.FORCE_REBUILD === "true"; // ساخت دوباره با آخرین فایل‌ها، حتی بدون فایل تازه
+// اجرای دستی از تب Actions: کسی خودش دکمه را زده و منتظر نتیجه است
+const MANUAL = process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
+// هر اجرای دستی کار کامل را انجام می‌دهد: آخرین فایل‌ها خوانده، داشبورد از نو ساخته و سند گوگل هم‌گام می‌شود.
+// (تیک «ساخت دوباره» دیگر لازم نیست؛ برای سازگاری با اجراهای قدیمی نگه داشته شده.)
+const FORCE = process.env.FORCE_REBUILD === "true" || MANUAL;
 // پُرس‌لاین (اختیاری): اگر کلید و شناسه‌ی پرسش‌نامه باشد، گزینه‌های سؤال کشویی ضامن خودکار به‌روز می‌شود
 const PL_KEY = (process.env.PORSLINE_API_KEY || "").trim();
 const PL_SURVEY = (process.env.PORSLINE_SURVEY_ID || "").trim();
@@ -422,11 +426,28 @@ const writeState = (s) => fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2
 let state = {};
 // نوشتن در سند گوگل: یک ردیف تاریخچه، و درخواست‌های تازه‌ی فرم در تب «صف وام».
 // هر خطایی این‌جا فقط یک پیام تلگرام است؛ داشبورد منتشرشده دست‌نخورده می‌ماند.
+const jDate = (jdn) => { const d = D.J.d2j(jdn); return `${d.jy}/${String(d.jm).padStart(2, "0")}/${String(d.jd).padStart(2, "0")}`; };
 async function writeToSheet(r, fundWb) {
   if (!SHEET.ON) return;
   const problems = [];
   try { await SHEET.history(D, r, D.parseWorkbook(fundWb).header); }
   catch (e) { problems.push("تاریخچه: " + e.message); }
+  // دفتر وام‌ها: وام‌های تازه‌ی اکسل صندوق، با ضامنی که از فرم پُرس‌لاین جور شده
+  try {
+    const reg = (r.loanRegister || []).map((x) => ({ ...x, date: jDate(x.jdn) }));
+    const j = await SHEET.loans(D, reg);
+    if (j) {
+      const miss = j.missing || [], fill = j.filled || [];
+      const say = [];
+      if (j.added) say.push(`📒 ${D.fmtInt(j.added)} وام تازه در دفتر وام‌های سند گوگل ثبت شد.`);
+      if (fill.length) say.push(`✅ ضامن ${D.fmtInt(fill.length)} وام که قبلاً «ضامن پیدا نشد» بود، پیدا و در سند نوشته شد:\n` +
+        fill.map((x) => `• ${x.name} (${x.date})`).join("\n"));
+      if (miss.length) say.push(`⚠️ برای ${D.fmtInt(miss.length)} وام تازه ضامنی پیدا نشد؛ در سند «ضامن پیدا نشد» نوشته شد:\n` +
+        miss.map((x) => `• ${x.name} (${x.date})`).join("\n") +
+        "\nیعنی متقاضی فرم پُرس‌لاین پر نکرده یا ضامنی که نوشته با هیچ عضوی جور نشد. می‌توانید همان سلول را دستی پر کنید؛ بعد از آن ربات دیگر به آن دست نمی‌زند.");
+      if (say.length) await notify(say.join("\n\n"));
+    }
+  } catch (e) { problems.push("دفتر وام‌ها: " + e.message); }
   try {
     const list = (r.review && r.review.list) || [];
     const rows = list

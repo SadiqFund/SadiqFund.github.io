@@ -645,7 +645,7 @@ function compute(data, req, extra) {
   const monthLoans = loans.filter((l) => l.jdn >= monthStart && l.jdn <= asOf);
 
   // --- زمان انتظار و صف (از فایل درخواست‌ها)
-  let wait = null, guarantors = null, review = null;
+  let wait = null, guarantors = null, review = null, loanRegister = null;
   if (req && !data.hasLoanNames) {
     checks.push({ level: "error", text: `ستون «${CONFIG.sheets.loans.optional.who}» در شیت وام‌ها پیدا نشد؛ درخواست‌ها به وام‌ها وصل نمی‌شوند و بخش «انتظار برای وام» ساخته نشد.` });
   } else if (req) {
@@ -845,6 +845,27 @@ function compute(data, req, extra) {
         guarantors = { eligible, out, reasons: reasons.map((x) => ({ ...x, names: out[x.key].map((a) => a.name), people: out[x.key] })), noReq, unknownG, unknownGList, fromSheet, activeN: active.length };
       }
       review = { assess, resolve, rosterFind: data.rosterFind, queue: queueList, list: req.list, waitMedian: wait.median, hasGuarantor: req.hasGuarantor };
+
+      // --- دفتر وام‌ها برای نوشتن در سند گوگل (فقط برای مدیر صندوق؛ در داشبورد عمومی نمی‌آید)
+      // هر وام اکسل صندوق، با ضامنی که فقط از روی فرم پُرس‌لاین جور شده باشد. اگر درخواستی نبود یا
+      // ضامن با هیچ عضوی جور نشد، ضامن خالی می‌ماند (سند گوگل «ضامن پیدا نشد» می‌نویسد).
+      loanRegister = loans.filter((l) => l.jdn <= asOf).map((l) => {
+        const rq = reqOfLoan.get(l);
+        const g = rq ? resolve(rq.gMobile, rq.gName) : null;
+        const gp = g ? personBy.get(g) : null;
+        const me = personBy.get(l.who);
+        const rf = data.rosterFind ? data.rosterFind(null, l.who) : null;
+        return {
+          name: (me && me.nameRaw) || l.whoRaw,
+          code: rf && rf.code ? rf.code : "",
+          amount: l.amount,
+          count: l.count,
+          per: l.count ? Math.round(l.gross / l.count) : "",
+          guarantor: gp ? gp.nameRaw : "",
+          jdn: l.jdn,
+          settled: !(l.remaining > 0 && l.paidCount < l.count),
+        };
+      });
     }
   } else {
     checks.push({ level: "warn", text: "فایل درخواست‌ها داده نشده؛ بخش «انتظار برای وام» در داشبورد نمی‌آید." });
@@ -901,6 +922,7 @@ function compute(data, req, extra) {
     },
     wait,
     guarantors, // فقط برای مدیر صندوق؛ در renderReport استفاده نمی‌شود
+    loanRegister, // دفتر وام‌ها برای سند گوگل؛ فقط برای مدیر صندوق
     review, // سنجش اعضا و صف برای کارت بررسی درخواست‌ها؛ فقط برای مدیر صندوق
     growth: { series, snaps, years, start: fmtMonthYear(g0) },
     months: months.slice(-Math.max(...CONFIG.chartRanges)),

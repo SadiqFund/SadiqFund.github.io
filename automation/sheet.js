@@ -77,6 +77,17 @@ async function history(D, r, header) {
   return j;
 }
 
+// وام‌های اکسل صندوق ← تب «وام‌ها»
+// برمی‌گرداند: { added, filled: [...], missing: [...] }
+//   filled  = ردیف‌هایی که «ضامن پیدا نشد» داشتند و حالا ضامنشان پیدا شد
+//   missing = ردیف‌های تازه‌ای که ضامنشان پیدا نشد
+async function loans(D, rows) {
+  if (!ON || !rows.length) return null;
+  const j = await call("loans", { rows });
+  log(`loan rows added: ${(j && j.added) || 0}; guarantor backfilled: ${(j && j.filled ? j.filled.length : 0)}; without a guarantor: ${(j && j.missing ? j.missing.length : 0)}.`);
+  return j;
+}
+
 // درخواست‌های فرم ← تب «صف وام»
 async function queue(D, rows) {
   if (!ON || !rows.length) return null;
@@ -85,4 +96,4 @@ async function queue(D, rows) {
   return j;
 }
 
-module.exports = { ON, loanGuarantors, history, queue };
+module.exports = { ON, loanGuarantors, history, loans, queue };
