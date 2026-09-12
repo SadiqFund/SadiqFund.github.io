@@ -1,0 +1,68 @@
+# ایمیل ماهانه‌ی صندوق
+# هر روز صبح ساعت ۹ به وقت تهران یک بار سر می‌زند؛ فقط اگر امروز اول ماه شمسی باشد کاری می‌کند.
+# اجرای خودکار همیشه حالت test است: ایمیل فقط به نشانی خود صندوق می‌رود و در تلگرام خبر می‌دهد.
+# فرستادن به همه‌ی اعضا فقط دستی است: Actions ← Monthly email ← Run workflow ← mode = all
+name: Monthly email
+
+on:
+  schedule:
+    - cron: "30 5 * * *" # 05:30 UTC = ۹:۰۰ صبح تهران
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "test = فقط به ایمیل صندوق  |  all = به همه‌ی اعضا در Bcc"
+        type: choice
+        options: [test, all]
+        default: test
+      ignore_date:
+        description: "بدون توجه به اول ماه بودن اجرا شود"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: monthly-email
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install
+        working-directory: automation
+        run: npm ci --no-audit --no-fund
+
+      - name: Send
+        working-directory: automation
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NOTIFY_CHAT_ID: ${{ secrets.NOTIFY_CHAT_ID }}
+          MEMBER_EMAILS: ${{ secrets.MEMBER_EMAILS }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SITE_URL: https://${{ github.repository_owner }}.github.io
+          MODE: ${{ inputs.mode || 'test' }}
+          IGNORE_DATE: ${{ inputs.ignore_date || 'false' }}
+        run: node send-email.js
+
+      - name: Remember
+        run: |
+          git config user.name "dashboard-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add automation/email-state.json
+          if git diff --cached --quiet; then
+            echo "[email] nothing to commit."
+          else
+            git commit -m "ایمیل ماهانه"
+            git push
+          fi
