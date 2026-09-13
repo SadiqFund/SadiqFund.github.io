@@ -131,4 +131,21 @@ async function queue(D, rows) {
   return j;
 }
 
-module.exports = { ON, loanGuarantors, history, loans, queue };
+// ---------------------------------------------------------------- تب‌های کارمزد
+// خواندن هر دو تب: { in: [{row,title,date,amount,note}], out: [...] }
+async function feesRead() {
+  if (!ON) return null;
+  const j = await call("feesRead");
+  log(`fee tabs read: ${(j && j.in ? j.in.length : 0)} in, ${(j && j.out ? j.out.length : 0)} out.`);
+  return j;
+}
+
+// fill: پر کردن سلول‌های خالی (تاریخ و توضیحات) · add: ردیف‌های تازه
+async function feesWrite(fill, add) {
+  if (!ON || (!fill.length && !add.length)) return null;
+  const j = await call("feesWrite", { fill, add });
+  log(`fee rows added: ${(j && j.addedIn) || 0} in, ${(j && j.addedOut) || 0} out; cells filled: ${(j && j.filled) || 0}.`);
+  return j;
+}
+
+module.exports = { ON, loanGuarantors, history, loans, queue, feesRead, feesWrite };

@@ -427,6 +427,97 @@ let state = {};
 // نوشتن در سند گوگل: یک ردیف تاریخچه، و درخواست‌های تازه‌ی فرم در تب «صف وام».
 // هر خطایی این‌جا فقط یک پیام تلگرام است؛ داشبورد منتشرشده دست‌نخورده می‌ماند.
 const jDate = (jdn) => { const d = D.J.d2j(jdn); return `${d.jy}/${String(d.jm).padStart(2, "0")}/${String(d.jd).padStart(2, "0")}`; };
+
+// ---------- دفتر کارمزدها (حساب خود صندوق) ← دو تب سند گوگل
+//
+// چند تراکنشِ نرم‌افزار در سند ریزتر ثبت شده‌اند: یک تراکنش، دو ردیف که جمعشان با آن یکی است.
+// این‌جا فقط با مبلغ توصیف می‌شوند (هیچ نامی در کد عمومی نمی‌آید). اگر روزی مورد تازه‌ای
+// پیش آمد، یک خط به همین فهرست اضافه شود تا ردیف تکراری ساخته نشود.
+const FEE_SPLITS = { 2000000: [1500000, 500000], 50000: [40000, 10000] };
+
+// کدام ردیف‌های دفتر در سند هست و کدام نیست.
+// روش: برای هر جهت (ورودی/خروجی)، مبلغ‌های سند یک «کیسه» می‌شوند و ردیف‌های دفتر به ترتیب
+// تاریخ از آن کیسه برداشت می‌کنند. هر ردیفی که مبلغش در کیسه نباشد، تازه است.
+// کلید مقایسه‌ی عنوان: بدون فاصله، با ارقام لاتین، ی و ک یکدست
+const feeKey = (s) => String(s == null ? "" : s)
+  .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+  .replace(/[يى]/g, "ی").replace(/ك/g, "ک").replace(/[‌‎‏\s،.]/g, "");
+// طول پیشوند مشترک دو عنوان: هرچه بیشتر، احتمال اینکه همان تراکنش باشد بیشتر
+function samePrefix(a, b) {
+  const x = feeKey(a), y = feeKey(b);
+  let i = 0;
+  while (i < x.length && i < y.length && x[i] === y[i]) i++;
+  return i;
+}
+
+function planFees(reg, sheet) {
+  const fill = [], add = [];
+  for (const dir of ["in", "out"]) {
+    const rows = (sheet && sheet[dir]) || [];
+    // کیسه: مبلغ ← ردیف‌های سند با همان مبلغ
+    const bag = new Map();
+    for (const r of rows) {
+      const k = Math.abs(r.amount);
+      if (!bag.has(k)) bag.set(k, []);
+      bag.get(k).push(r);
+    }
+    // بهترین نامزد برای یک مبلغ: اول شباهت عنوان، بعد خواندن تاریخ. امتیاز منفی یعنی نامزدی نیست.
+    const best = (k, date, title) => {
+      const list = bag.get(k) || [];
+      let bi = -1, bs = -1;
+      for (let i = 0; i < list.length; i++) {
+        const d = (list[i].date || "").trim();
+        const s = samePrefix(list[i].title, title) * 10 + (d === date ? 2 : !d ? 1 : 0);
+        if (s > bs) { bs = s; bi = i; }
+      }
+      return { i: bi, score: bs };
+    };
+    const take = (k, i) => (bag.get(k) || []).splice(i, 1)[0];
+    const mine = reg.filter((x) => (dir === "in" ? x.amount > 0 : x.amount < 0));
+    // تاریخِ «ثبت یکجا»: اولین تاریخ دفتر، اگر ده ردیف یا بیشتر روی همان روز باشد
+    const first = mine.length ? mine[0].jdn : null;
+    const bulk = first != null && reg.filter((x) => x.jdn === first).length >= 10 ? first : null;
+    for (const x of mine) {
+      const amt = Math.abs(x.amount);
+      const date = jDate(x.jdn);
+      const note = x.jdn === bulk ? (x.note ? `${x.note} · ثبت یکجا در دفتر` : "ثبت یکجا در دفتر") : x.note;
+      // فقط سلول‌هایی که واقعاً خالی‌اند فرستاده می‌شوند؛ نوشته‌ی موجود هیچ‌وقت عوض نمی‌شود
+      const want = (r) => {
+        const d = r.date && r.date.trim() ? "" : date;
+        const n = r.note && r.note.trim() ? "" : note;
+        if (d || n) fill.push({ dir, row: r.row, date: d, note: n });
+      };
+      const whole = best(amt, date, x.title);
+      // شاید در سند به دو ردیف شکسته شده باشد؛ آن راه هم امتیاز می‌گیرد و بهترین برنده می‌شود
+      const parts = FEE_SPLITS[amt];
+      let split = null;
+      if (parts) {
+        const picked = [];
+        let okAll = true, score = 0;
+        const tmp = new Map();
+        for (const p of parts) {
+          const b = best(p, date, x.title);
+          if (b.i < 0) { okAll = false; break; }
+          const row = (bag.get(p) || [])[b.i];
+          if (tmp.has(row)) { okAll = false; break; }
+          tmp.set(row, true);
+          picked.push({ p, i: b.i, row });
+          score = Math.max(score, b.score);
+        }
+        if (okAll && picked.length === parts.length) split = { picked, score };
+      }
+      if (split && split.score > whole.score) {
+        // از انتها برداریم تا شماره‌ها به‌هم نریزد
+        for (const q of [...split.picked].sort((a, b) => b.i - a.i)) want(take(q.p, q.i));
+        continue;
+      }
+      if (whole.i >= 0) { want(take(amt, whole.i)); continue; }
+      if (split) { for (const q of [...split.picked].sort((a, b) => b.i - a.i)) want(take(q.p, q.i)); continue; }
+      add.push({ dir, title: x.title, date, amount: amt, note });
+    }
+  }
+  return { fill, add };
+}
 async function writeToSheet(r, fundWb, loud) {
   if (!SHEET.ON) return;
   const problems = [];
@@ -473,6 +564,19 @@ async function writeToSheet(r, fundWb, loud) {
     const q = await SHEET.queue(D, rows);
     done.push(`صف وام: ${q && q.added ? `${D.fmtInt(q.added)} ردیف تازه` : "چیزی برای اضافه کردن نبود"}`);
   } catch (e) { problems.push("صف وام: " + e.message); }
+  // دفتر کارمزدها: تراکنش‌های حساب خود صندوق
+  try {
+    const reg = r.feeRegister || [];
+    if (reg.length) {
+      const sheet = await SHEET.feesRead();
+      const { fill, add } = planFees(reg, sheet);
+      const j = await SHEET.feesWrite(fill, add);
+      const n = j ? (j.addedIn || 0) + (j.addedOut || 0) : 0;
+      done.push(`کارمزدها: ${n ? `${D.fmtInt(n)} ردیف تازه` : "چیزی برای اضافه کردن نبود"}` +
+        (j && j.filled ? ` (${D.fmtInt(j.filled)} سلول خالی پر شد)` : ""));
+      if (n) await notify(`💰 ${D.fmtInt(n)} تراکنش تازه‌ی حساب صندوق در تب‌های کارمزد ثبت شد.`);
+    }
+  } catch (e) { problems.push("کارمزدها: " + e.message); }
   if (problems.length) await notify("⚠️ نوشتن در سند گوگل کامل نشد:\n" + problems.map((x) => "• " + x).join("\n"));
   // اجرای دستی: یک خط تأیید، تا سکوت با خرابی اشتباه گرفته نشود
   else if (loud && done.length) await notify("📗 سند گوگل به‌روز شد.\n" + done.map((x) => "• " + x).join("\n"));

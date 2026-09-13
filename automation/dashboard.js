@@ -222,6 +222,8 @@ const CONFIG = {
         manager: "تغییر در موجودی نزد مدیر",
         online: "تغییر در موجودی نزد همیان",
       },
+      // فقط برای تراکنش‌های حساب خود صندوق (دفتر کارمزدها) خوانده می‌شود، نه تراکنش اعضا
+      optional: { desc: "توضیحات" },
     },
     loans: {
       name: "وام‌ها",
@@ -427,7 +429,12 @@ function parseWorkbook(wb) {
       if (norm(r.date) !== norm("مجموع") && (r.type || r.manager || r.online)) skipped++;
       return;
     }
-    tx.push({ jdn, t: timeOf(r.date), who: norm(r.who), type: norm(r.type), amount: (toNum(r.manager) || 0) + (toNum(r.online) || 0) });
+    const who = norm(r.who);
+    const e = { jdn, t: timeOf(r.date), who, type: norm(r.type), amount: (toNum(r.manager) || 0) + (toNum(r.online) || 0) };
+    // ستون توضیحات فقط برای حساب‌های خود صندوق نگه داشته می‌شود (دفتر کارمزدها).
+    // تراکنش اعضا توضیحاتشان خوانده نمی‌شود و هیچ‌جا نمی‌رود.
+    if (fundNames.includes(who) && r.desc != null && String(r.desc).trim()) e.desc = String(r.desc).trim();
+    tx.push(e);
   });
   if (skipped) notes.push({ level: "warn", text: `${skipped} ردیف از شیت تراکنش‌ها تاریخ قابل‌خواندن نداشت و کنار گذاشته شد.` });
   tx.sort((a, b) => a.jdn - b.jdn || a.t - b.t);
@@ -923,12 +930,42 @@ function compute(data, req, extra) {
     wait,
     guarantors, // فقط برای مدیر صندوق؛ در renderReport استفاده نمی‌شود
     loanRegister, // دفتر وام‌ها برای سند گوگل؛ فقط برای مدیر صندوق
+    feeRegister: feeRegister(data), // دفتر کارمزدها (حساب خود صندوق) برای سند گوگل؛ فقط برای مدیر صندوق
     review, // سنجش اعضا و صف برای کارت بررسی درخواست‌ها؛ فقط برای مدیر صندوق
     growth: { series, snaps, years, start: fmtMonthYear(g0) },
     months: months.slice(-Math.max(...CONFIG.chartRanges)),
     checks,
     hasError: checks.some((c) => c.level === "error"),
   };
+}
+
+// ---------------------------------------------------------------------------- دفتر کارمزدها
+// تراکنش‌های حساب خود صندوق («حساب هیئت‌مدیره»): کارمزد وام، قرض خیرین، حقوق، اشتراک همیان و…
+// هر تراکنش یک ردیف: مثبت = ورودی، منفی = خروجی. متن ستون توضیحاتِ نرم‌افزار به دو تکه می‌شود:
+// «عنوان» و «توضیحات»، وقتی که آخرش جمله‌ی گیرنده باشد («… ، واریز به آقای ×»).
+const PAYEE_RE = /^(?:واریز|پرداخت|پرداخت شده)\s+(?:به|از)\s+\S/;
+function splitDesc(text) {
+  const s = String(text == null ? "" : text).replace(/\s+/g, " ").trim();
+  if (!s) return { title: "", note: "" };
+  const i = s.lastIndexOf("،");
+  if (i > 0) {
+    const tail = s.slice(i + 1).trim();
+    if (PAYEE_RE.test(tail)) return { title: s.slice(0, i).trim(), note: tail };
+  }
+  return { title: s, note: "" };
+}
+function feeRegister(data) {
+  const fundNames = CONFIG.fundAccounts.map(norm);
+  // نوع تراکنش با فاصله‌ی درست (t.type نرمال شده و فاصله‌هایش رفته است)
+  const label = new Map(Object.values(CONFIG.txTypes).map((v) => [norm(v), v]));
+  const out = [];
+  for (const t of data.tx) {
+    if (!fundNames.includes(t.who) || !t.amount) continue;
+    const { title, note } = splitDesc(t.desc);
+    // اگر در نرم‌افزار توضیحاتی ثبت نشده باشد، نوع تراکنش به‌عنوان عنوان می‌آید تا ردیف بی‌نام نماند
+    out.push({ jdn: t.jdn, amount: t.amount, title: title || label.get(t.type) || t.type || "", note });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------- قالب‌بندی
