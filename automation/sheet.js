@@ -136,15 +136,15 @@ async function queue(D, rows) {
 async function feesRead() {
   if (!ON) return null;
   const j = await call("feesRead");
-  log(`fee tabs read: ${(j && j.in ? j.in.length : 0)} in, ${(j && j.out ? j.out.length : 0)} out.`);
+  log(`fee ledger read: ${(j && j.rows ? j.rows.length : 0)} rows.`);
   return j;
 }
 
 // fill: پر کردن سلول‌های خالی (تاریخ و توضیحات) · add: ردیف‌های تازه
 async function feesWrite(fill, add) {
-  if (!ON || (!fill.length && !add.length)) return null;
+  if (!ON) return null; // حتی بدون تغییر هم صدا زده می‌شود تا اگر تب به‌هم‌ریخته باشد مرتب شود
   const j = await call("feesWrite", { fill, add });
-  log(`fee rows added: ${(j && j.addedIn) || 0} in, ${(j && j.addedOut) || 0} out; cells filled: ${(j && j.filled) || 0}.`);
+  log(`fee rows added: ${(j && j.added) || 0}; cells filled: ${(j && j.filled) || 0}${j && j.sorted ? "; re-sorted by date" : ""}.`);
   return j;
 }
 
