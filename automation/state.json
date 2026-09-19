@@ -1,20 +1,20 @@
 {
   "offset": 621408188,
   "fund": {
-    "file_id": "BQACAgQAAx0CfR8yXwADpGqjnvsi-fQ7EAz2VQAB5jZiQ9kBagACISIAAgfwGVFN2TT_xEXSoj0E",
-    "file_unique_id": "AgADISIAAgfwGVE",
-    "date": 1789107963
+    "file_id": "BQACAgQAAx0CfR8yXwAD2GquedXxl-slrnbyjZsMCr9XEN_DAALaHQACd_N5UZlMM3cJFY-qPQQ",
+    "file_unique_id": "AgAD2h0AAnfzeVE",
+    "date": 1789819349
   },
   "lastBuild": {
-    "reportDate": "۲۰ شهریور ۱۴۰۵",
-    "at": "2026-09-12T10:13:02.937Z"
+    "reportDate": "۲۸ شهریور ۱۴۰۵",
+    "at": "2026-09-19T12:05:04.231Z"
   },
   "req": {
     "file_id": "BQACAgQAAx0CfR8yXwADXWqjWikVEc6l2oS7GHXOvB6GwdhYAAL4IQACB_AZUWoBdUhRL9EaPQQ",
     "file_unique_id": "AgAD-CEAAgfwGVE",
     "date": 1789090345
   },
-  "gHash": "2da68d3dc0cb827b",
+  "gHash": "d67524f0ac709766",
   "plVia": "export",
   "plHash": "62194279a9c2b645",
   "plCount": 92,
@@ -35,7 +35,6 @@
     "2c0db7b790",
     "2d3b6e9391",
     "2da9a3225f",
-    "30692e128b",
     "335f7c0d2c",
     "34240af2b3",
     "35d9c681a4",
@@ -50,11 +49,13 @@
     "4ea09f7020",
     "53fd2dfaaf",
     "5506835cc5",
+    "5a372937e9",
     "5f1946e431",
     "60fb5a1ec4",
     "64c7f6d031",
     "6731f812fc",
     "6bababb859",
+    "6cf7b37c5e",
     "6d2a6fe3d5",
     "70cebf16a3",
     "759e5bee55",
@@ -98,19 +99,11 @@
     "e639ea0bec",
     "e9592fa19e",
     "e9e9c81bc9",
-    "eceecb4492",
     "eda913d16a",
     "f1dc55b546",
     "f26f8d7d15",
     "fe06502c31",
     "ffcb8f22cd"
   ],
-  "plFail": true,
-  "pendingFund": {
-    "file_id": "BQACAgQAAx0CfR8yXwAD2GquedXxl-slrnbyjZsMCr9XEN_DAALaHQACd_N5UZlMM3cJFY-qPQQ",
-    "file_unique_id": "AgAD2h0AAnfzeVE",
-    "name": "14050628.xlsx",
-    "date": 1789819349,
-    "size": 338973
-  }
+  "plFail": true
 }
